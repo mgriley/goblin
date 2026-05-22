@@ -27,6 +27,11 @@ export interface ToolDefinition {
   parameters: Record<string, unknown>;
 }
 
+/** A `ToolDefinition` plus the async handler that runs when the model invokes it. */
+export interface Tool extends ToolDefinition {
+  handler: (args: Record<string, unknown>) => Promise<string>;
+}
+
 /** Result of a single `LLM.complete` turn. */
 export interface LLMResponse {
   text: string;

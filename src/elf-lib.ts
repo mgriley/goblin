@@ -10,6 +10,7 @@ import { Agent } from "./agent.js";
 import { runCli } from "./cli.js";
 import { Messenger, type MessageSource } from "./messenger.js";
 import { ROOT_PURPOSE } from "./root_purpose.js";
+import { runBashCommandTool } from "./tools.js";
 import { checkIfDirExists, findAllSubdirs } from "./utils.js";
 
 // Path to main.{js,ts} sitting next to this file. The extension follows our
@@ -72,7 +73,7 @@ export class Elf {
     this.elfDir = elfDir;
     // Construct the agent before any await so handleMessage can't race
     // against an unset field if a message lands while we're booting.
-    this.agent = Agent.createAgent(config);
+    this.agent = Agent.createAgent(config, [runBashCommandTool]);
 
     // Launch each child elf — one per subdirectory under `./children`.
     // TODO - should probably be run as a tool, part of the first instruction.
