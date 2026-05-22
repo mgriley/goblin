@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { z } from "zod";
 
 import { Agent } from "./agent.js";
+import { runCli } from "./cli.js";
 import { Messenger, type MessageSource } from "./messenger.js";
 import { ROOT_PURPOSE } from "./root_purpose.js";
 import { checkIfDirExists, findAllSubdirs } from "./utils.js";
@@ -39,6 +40,7 @@ export class Elf {
   // Set in `run()`; available to anything called after the elf has started.
   private config!: ElfConfig;
   private elfDir!: string;
+  private agent!: Agent;
 
   constructor() {
     this.children = new Map<ElfId, ChildInfo>();
@@ -47,27 +49,20 @@ export class Elf {
     );
   }
 
-  // Placeholder handler — logs the message and acks. The agent loop will
-  // eventually take over routing these to the LLM.
-  private async handleMessage(
-    source: MessageSource,
-    message: string,
-  ): Promise<string> {
-    const from =
-      source.type === "parentMessage" ? "parent" : (source.childName ?? "?");
-    console.log(`[elf] message from ${from}: ${message}`);
-    return `ack from ${process.pid}`;
-  }
-
   async runRootElf() {
     console.log(`Launching root elf`);
 
     const config = await this.readConfigFile();
     console.log(`Loaded config...`);
 
-    // Create the root elf's work dir, then run it
+    // Create the root elf's work dir, then run it alongside the user CLI.
     await this.createWorkDir(config.rootDir, ROOT_PURPOSE);
-    await this.run(config, config.rootDir);
+    await Promise.all([
+      this.run(config, config.rootDir),
+      runCli((message) =>
+        this.handleMessage({ type: "parentMessage" }, message),
+      ),
+    ]);
   }
 
   async run(config: ElfConfig, elfDir: string) {
@@ -75,6 +70,9 @@ export class Elf {
     process.chdir(elfDir);
     this.config = config;
     this.elfDir = elfDir;
+    // Construct the agent before any await so handleMessage can't race
+    // against an unset field if a message lands while we're booting.
+    this.agent = Agent.createAgent(config);
 
     // Launch each child elf — one per subdirectory under `./children`.
     // TODO - should probably be run as a tool, part of the first instruction.
@@ -83,8 +81,17 @@ export class Elf {
     }
 
     // TODO - feed it a first instruction.
-    const agent = Agent.createAgent(config);
-    await agent.runAgentLoop();
+    await this.agent.runAgentLoop();
+  }
+
+  private async handleMessage(
+    source: MessageSource,
+    message: string,
+  ): Promise<string> {
+    const from =
+      source.type === "parentMessage" ? "parent" : (source.childName ?? "?");
+    console.log(`[elf] message from ${from}: ${message}`);
+    return this.agent.ask(message);
   }
 
   async createChild(childName: string, purpose: string): Promise<void> {
