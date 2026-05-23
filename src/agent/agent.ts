@@ -1,7 +1,7 @@
-import { AnthropicLLM } from "./anthropic-llm.js";
-import { AsyncQueue } from "./async-queue.js";
-import type { ElfConfig } from "./elf-lib.js";
+import { AsyncQueue } from "../utils/async-queue.js";
+import type { ElfConfig } from "../elf.js";
 import type { LLM, Message, Tool, ToolCall } from "./llm.js";
+import { AnthropicLLM } from "./anthropic-llm.js";
 import { OpenAILLM } from "./openai-llm.js";
 
 interface InboxItem {

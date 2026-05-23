@@ -1,6 +1,6 @@
 import process from "node:process";
 
-import { Elf, type ElfConfig } from "./elf-lib.js";
+import { Elf, type ElfConfig } from "./elf.js";
 
 const elf = new Elf();
 
