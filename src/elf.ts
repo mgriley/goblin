@@ -4,7 +4,7 @@ import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 
-import { Schema } from "./schema.js";
+import { Schema } from "./utils/schema.js";
 
 import { Agent } from "./agent/agent.js";
 import { runCli } from "./cli.js";

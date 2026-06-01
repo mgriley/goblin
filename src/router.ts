@@ -1,8 +1,8 @@
 
 
 export class RouteHandler {
-  inputSchema: unknown; // TODO: JsonSchema from ./schema.js
-  outputSchema: unknown; // TODO: JsonSchema from ./schema.js
+  inputSchema: unknown; // TODO: JsonSchema from ./utils/schema.js
+  outputSchema: unknown; // TODO: JsonSchema from ./utils/schema.js
   handlerFunc: (message: string) => Promise<string>;
 
   constructor(
@@ -59,7 +59,7 @@ export class Router {
     }
     try {
       // TODO - convert to and from the schemas defined on the handler
-      return await handler.handle(message);
+      return await handler.handlerFunc(message);
     } catch (err) {
       console.error(`Error handling message on route "${route}":`, err);
       throw err;

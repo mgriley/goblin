@@ -1,5 +1,25 @@
+import { createHash } from "node:crypto";
 import { readdir, stat } from "node:fs/promises";
 import path from "node:path";
+
+/**
+ * Stable content hash of `text`. Used as a cache-busting token in module import
+ * URLs: identical code yields the same hash (so the import cache is reused),
+ * and any code change yields a new hash (forcing a fresh import). Derived purely
+ * from the bytes, so it needs no persistence and survives restarts.
+ */
+export function hashContent(text: string): string {
+  return createHash("sha256").update(text).digest("hex");
+}
+
+/**
+ * A success-or-failure outcome. Lets a function report failure as a value
+ * rather than throwing. Carries a `value` of type `T` on
+ * success, or a human-readable `error` string on failure.
+ */
+export type Result<T> =
+  | { ok: true; value: T }
+  | { ok: false; error: string };
 
 /**
  * True if `dirPath` exists and is a directory; false otherwise.

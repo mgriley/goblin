@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
-import { validate, type ObjectSchema } from "./schema.js";
+import { validate, type ObjectSchema } from "./utils/schema.js";
 import type { Elf } from "./elf.js";
 import type { Tool } from "./agent/llm.js";
 

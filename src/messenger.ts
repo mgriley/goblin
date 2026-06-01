@@ -1,7 +1,7 @@
 import type { ChildProcess } from "node:child_process";
 import process from "node:process";
 
-import { Schema } from "./schema.js";
+import { Schema } from "./utils/schema.js";
 
 type IPCSender = ChildProcess | NodeJS.Process;
 
@@ -64,7 +64,7 @@ const responseSchema = new Schema<ResponseMessage>({
  * Correlates outgoing IPC messages with incoming responses, and dispatches
  * incoming requests to a user-supplied `MessageHandler`.
  *
- * Wire format (validated via `./schema.js`):
+ * Wire format (validated via `./utils/schema.js`):
  * - request:  `{ __messenger: "request",  id, message }`
  * - response: `{ __messenger: "response", id, response }`
  *

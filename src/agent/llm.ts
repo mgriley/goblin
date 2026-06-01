@@ -1,9 +1,9 @@
-import type { ObjectSchema } from "../schema.js";
+import type { ObjectSchema } from "../utils/schema.js";
 
 // The JSON Schema subset used to describe tool parameters lives in
-// `../schema.js` (it doubles as our validation + peer-advertisement format).
+// `../utils/schema.js` (it doubles as our validation + peer-advertisement format).
 // Re-exported here so existing `llm.js` importers keep working.
-export type { JsonSchema, ObjectSchema } from "../schema.js";
+export type { JsonSchema, ObjectSchema } from "../utils/schema.js";
 
 export type Role = "system" | "user" | "assistant" | "tool";
 
