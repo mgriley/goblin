@@ -67,6 +67,16 @@ SetPeerInterface(peerName, interfaceName)
 RemovePeer(name)
 GetPeers(name)
 
+### Persisting peers
+
+In this case, a peer is a sub-process of the elf proc, so it can't be "persisted" in the same way as a file. I think simplest thing
+to do is for the PeerManager to track a peer's state (its name, interface, etc), then another component (like SpawnManager) is
+responsible for actually bringing up the peers on restart. When the peer connects again, its previous interface+options will apply.
+
+In this way, the idea of a "peer" is pretty loose. A peer added to PeerManager is not necessarily currently connected or active.
+Other components like SpawnManager are responsible for the mechanics of bringing up/down the peers, but are not responsible for things like
+assigning interfaces, etc.
+
 
 ## SpawnManager
 To start, the only peers are the processes in our process hierarchy. We can communicate with our parent proc by IPC and with our

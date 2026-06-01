@@ -1,0 +1,145 @@
+/**
+ * SpawnManager — the lifecycle of this elf's child processes.
+ *
+ * In V1 the only peers are processes in our own tree: we talk to children we
+ * fork (and, separately, to the parent that forked us). SpawnManager owns the
+ * *existence* side of that — forking a child, tracking its process, restarting
+ * the set on startup, tearing one down — and hands each live child to
+ * {@link PeerManager} as an {@link IpcPeer}. It deliberately knows nothing about
+ * interfaces; the binding (and its persistence) lives in PeerManager.
+ *
+ * A child's durable identity is its workspace directory under `childrenDir`
+ * (holding a `purpose.md`). That directory — not any in-memory list — is the
+ * source of truth for "which children should exist", so {@link spawnAllExisting}
+ * can rebuild the whole set after a restart by reading the disk.
+ */
+
+import { fork, type ChildProcess, type Serializable } from "node:child_process";
+import { mkdir, rm, writeFile } from "node:fs/promises";
+import path from "node:path";
+
+import { checkIfDirExists, findAllSubdirs } from "../utils/utils.js";
+import { IpcPeer } from "./ipc_peer.js";
+import type { PeerManager } from "./peer_manager.js";
+
+export interface SpawnManagerOptions {
+  /** Directory holding one subdir per child elf (its workspace). */
+  childrenDir: string;
+  /** Script to `fork` for each child (typically the elf's own entry point). */
+  entryScript: string;
+  /** PeerManager to register each spawned child's connection with. */
+  peerManager: PeerManager;
+  /**
+   * Build the IPC init message handed to a freshly forked child (e.g. its config
+   * + workspace dir). Node buffers it until the child's event loop starts.
+   */
+  initPayload: (childDir: string) => Serializable;
+  /**
+   * Extra `execArgv` for forked children. Defaults to forwarding the tsx loader
+   * when the entry script is a `.ts` file, matching how this elf was launched.
+   */
+  execArgv?: string[];
+}
+
+export class SpawnManager {
+  private readonly children = new Map<string, ChildProcess>();
+  private readonly childrenDir: string;
+  private readonly entryScript: string;
+  private readonly peerManager: PeerManager;
+  private readonly initPayload: (childDir: string) => Serializable;
+  private readonly execArgv: string[];
+
+  constructor(opts: SpawnManagerOptions) {
+    this.childrenDir = opts.childrenDir;
+    this.entryScript = opts.entryScript;
+    this.peerManager = opts.peerManager;
+    this.initPayload = opts.initPayload;
+    this.execArgv =
+      opts.execArgv ??
+      (path.extname(opts.entryScript) === ".ts" ? ["--import", "tsx"] : []);
+  }
+
+  /**
+   * Create a new child elf: ensure its workspace dir (with `purpose.md`) exists,
+   * then fork and connect it. The child's name is its directory name and its
+   * peer name. Throws if a child with this name is already running.
+   */
+  async spawnActor(name: string, purpose: string): Promise<void> {
+    if (this.children.has(name)) {
+      throw new Error(`spawnActor: child "${name}" is already running`);
+    }
+    const childDir = path.join(this.childrenDir, name);
+    await this.ensureWorkDir(childDir, purpose);
+    await this.launch(name, childDir);
+  }
+
+  /**
+   * Bring up every child whose workspace dir already exists on disk. Called on
+   * startup to resume where we left off; skips any that are already running.
+   */
+  async spawnAllExisting(): Promise<void> {
+    for (const childDir of await findAllSubdirs(this.childrenDir)) {
+      const name = path.basename(childDir);
+      if (this.children.has(name)) continue;
+      await this.launch(name, childDir);
+    }
+  }
+
+  /**
+   * Terminate a child and forget it entirely: SIGTERM the process, drop it from
+   * PeerManager, and delete its workspace dir so it won't be respawned. Safe to
+   * call on an unknown name (no-op).
+   */
+  async removeActor(name: string): Promise<void> {
+    await this.terminate(name);
+    await this.peerManager.removePeer(name);
+    await rm(path.join(this.childrenDir, name), { recursive: true, force: true });
+  }
+
+  /** SIGTERM a running child and wait for it to exit. No-op if not running. */
+  async terminate(name: string): Promise<void> {
+    const proc = this.children.get(name);
+    if (!proc) return;
+    if (proc.exitCode === null && proc.signalCode === null) {
+      await new Promise<void>((resolve) => {
+        proc.once("exit", () => resolve());
+        proc.kill();
+      });
+    }
+    this.children.delete(name);
+  }
+
+  /** Names of children currently running under this manager. */
+  listRunning(): string[] {
+    return [...this.children.keys()];
+  }
+
+  /** Fork a child for `childDir`, register it as a peer, and track its process. */
+  private async launch(name: string, childDir: string): Promise<void> {
+    const proc = fork(this.entryScript, [], { execArgv: this.execArgv });
+    proc.send(this.initPayload(childDir));
+    this.children.set(name, proc);
+
+    // The child IPC channel becomes this peer's transport. Routing the factory
+    // through PeerManager binds inbound calls to access control for `name`.
+    await this.peerManager.attachPeer(name, (callbacks) => new IpcPeer(proc, callbacks));
+
+    proc.on("exit", () => {
+      // Only forget the process + connection; keep the peer record so a respawn
+      // reapplies its interface. The workspace dir survives, so the child is
+      // still "existing" for spawnAllExisting on the next startup.
+      if (this.children.get(name) === proc) this.children.delete(name);
+      this.peerManager.detachPeer(name);
+    });
+    proc.on("error", (err) => {
+      console.error(`[spawn] child "${name}" error:`, err);
+    });
+  }
+
+  /** Create `childDir` with a `purpose.md` if it doesn't already exist. */
+  private async ensureWorkDir(childDir: string, purpose: string): Promise<void> {
+    if (await checkIfDirExists(childDir)) return;
+    await mkdir(childDir, { recursive: true });
+    await writeFile(path.join(childDir, "purpose.md"), purpose);
+  }
+}
