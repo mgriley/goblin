@@ -4,7 +4,7 @@ import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 
-import { z } from "zod";
+import { Schema } from "./schema.js";
 
 import { Agent } from "./agent/agent.js";
 import { runCli } from "./cli.js";
@@ -20,13 +20,20 @@ const ENTRY_SCRIPT = path.join(path.dirname(HERE), `main${path.extname(HERE)}`);
 
 export type ElfId = string;
 
-export const ElfConfigSchema = z.object({
-  rootDir: z.string(),
-  openaiApiKey: z.string().optional(),
-  anthropicApiKey: z.string().optional(),
-});
+export interface ElfConfig {
+  rootDir: string;
+  openaiApiKey?: string;
+  anthropicApiKey?: string;
+}
 
-export type ElfConfig = z.infer<typeof ElfConfigSchema>;
+export const ElfConfigSchema = new Schema<ElfConfig>({
+  type: "object",
+  properties: {
+    rootDir: { type: "string" },
+    openaiApiKey: { type: "optional", inner: { type: "string" } },
+    anthropicApiKey: { type: "optional", inner: { type: "string" } },
+  },
+});
 
 class ChildInfo {
   constructor(

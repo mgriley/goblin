@@ -8,7 +8,8 @@
     "build": "tsc",
     "start": "node dist/main.js",
     "dev": "tsx src/main.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test $(find src -name '*_test.ts')"
   },
   "keywords": [],
   "author": "",
@@ -17,8 +18,5 @@
     "@types/node": "^25.9.1",
     "tsx": "^4.22.3",
     "typescript": "^6.0.3"
-  },
-  "dependencies": {
-    "zod": "^4.4.3"
   }
 }

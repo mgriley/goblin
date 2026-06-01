@@ -1,3 +1,10 @@
+import type { ObjectSchema } from "../schema.js";
+
+// The JSON Schema subset used to describe tool parameters lives in
+// `../schema.js` (it doubles as our validation + peer-advertisement format).
+// Re-exported here so existing `llm.js` importers keep working.
+export type { JsonSchema, ObjectSchema } from "../schema.js";
+
 export type Role = "system" | "user" | "assistant" | "tool";
 
 /** A tool invocation requested by the assistant. */
@@ -20,54 +27,11 @@ export interface Message {
   toolCallId?: string;
 }
 
-// ---------------------------------------------------------------------------
-// JSON Schema subset used to describe tool parameters. Both OpenAI and
-// Anthropic accept JSON Schema directly, so these types double as the
-// wire format — no conversion is needed beyond field-name differences.
-// ---------------------------------------------------------------------------
-
-export interface JSONSchemaObject {
-  type: "object";
-  properties?: Record<string, JSONSchema>;
-  required?: readonly string[];
-  additionalProperties?: boolean;
-  description?: string;
-}
-
-export interface JSONSchemaString {
-  type: "string";
-  description?: string;
-  enum?: readonly string[];
-}
-
-export interface JSONSchemaNumber {
-  type: "number" | "integer";
-  description?: string;
-}
-
-export interface JSONSchemaBoolean {
-  type: "boolean";
-  description?: string;
-}
-
-export interface JSONSchemaArray {
-  type: "array";
-  items: JSONSchema;
-  description?: string;
-}
-
-export type JSONSchema =
-  | JSONSchemaObject
-  | JSONSchemaString
-  | JSONSchemaNumber
-  | JSONSchemaBoolean
-  | JSONSchemaArray;
-
 /** Tool the model is allowed to call. `parameters` is always an object schema. */
 export interface ToolDefinition {
   name: string;
   description: string;
-  parameters: JSONSchemaObject;
+  parameters: ObjectSchema;
 }
 
 /** A `ToolDefinition` plus the async handler that runs when the model invokes it. */

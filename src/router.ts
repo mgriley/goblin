@@ -1,8 +1,8 @@
 
 
 export class RouteHandler {
-  inputSchema: unknown; // TODO: zod schema
-  outputSchema: unknown; // TODO: zod schema
+  inputSchema: unknown; // TODO: JsonSchema from ./schema.js
+  outputSchema: unknown; // TODO: JsonSchema from ./schema.js
   handlerFunc: (message: string) => Promise<string>;
 
   constructor(

@@ -1,7 +1,7 @@
 import type { ChildProcess } from "node:child_process";
 import process from "node:process";
 
-import { z } from "zod";
+import { Schema } from "./schema.js";
 
 type IPCSender = ChildProcess | NodeJS.Process;
 
@@ -26,31 +26,45 @@ interface PendingRequest {
   reject: (err: Error) => void;
 }
 
-const RequestMessageSchema = z.object({
-  __messenger: z.literal("request"),
-  id: z.string(),
-  message: z.string(),
+interface RequestMessage {
+  __messenger: "request";
+  id: string;
+  message: string;
+}
+
+interface ResponseMessage {
+  __messenger: "response";
+  id: string;
+  response: string;
+}
+
+type WireMessage = RequestMessage | ResponseMessage;
+
+// The two wire shapes are discriminated by `__messenger`: we read that field
+// off the raw message, then validate against the matching schema.
+const requestSchema = new Schema<RequestMessage>({
+  type: "object",
+  properties: {
+    __messenger: { type: "string" },
+    id: { type: "string" },
+    message: { type: "string" },
+  },
 });
 
-const ResponseMessageSchema = z.object({
-  __messenger: z.literal("response"),
-  id: z.string(),
-  response: z.string(),
+const responseSchema = new Schema<ResponseMessage>({
+  type: "object",
+  properties: {
+    __messenger: { type: "string" },
+    id: { type: "string" },
+    response: { type: "string" },
+  },
 });
-
-const WireMessageSchema = z.discriminatedUnion("__messenger", [
-  RequestMessageSchema,
-  ResponseMessageSchema,
-]);
-
-type RequestMessage = z.infer<typeof RequestMessageSchema>;
-type ResponseMessage = z.infer<typeof ResponseMessageSchema>;
 
 /**
  * Correlates outgoing IPC messages with incoming responses, and dispatches
  * incoming requests to a user-supplied `MessageHandler`.
  *
- * Wire format (validated via zod):
+ * Wire format (validated via `./schema.js`):
  * - request:  `{ __messenger: "request",  id, message }`
  * - response: `{ __messenger: "response", id, response }`
  *
@@ -102,21 +116,31 @@ export class Messenger {
     peer: IPCSender,
     source: MessageSource,
   ): Promise<void> {
-    const parsed = WireMessageSchema.safeParse(msg);
-    if (!parsed.success) return;
+    const kind =
+      typeof msg === "object" && msg !== null
+        ? (msg as Record<string, unknown>).__messenger
+        : undefined;
 
-    if (parsed.data.__messenger === "response") {
-      const pending = this.pending.get(parsed.data.id);
+    if (kind === "response") {
+      const parsed = responseSchema.safeParse(msg);
+      if (!parsed.ok) return;
+      const wire = parsed.value;
+      const pending = this.pending.get(wire.id);
       if (!pending) return;
-      this.pending.delete(parsed.data.id);
-      pending.resolve(parsed.data.response);
+      this.pending.delete(wire.id);
+      pending.resolve(wire.response);
       return;
     }
 
-    const response = await this.handler(source, parsed.data.message);
+    if (kind !== "request") return;
+    const parsed = requestSchema.safeParse(msg);
+    if (!parsed.ok) return;
+    const wire = parsed.value;
+
+    const response = await this.handler(source, wire.message);
     const reply: ResponseMessage = {
       __messenger: "response",
-      id: parsed.data.id,
+      id: wire.id,
       response,
     };
     peer.send?.(reply);
