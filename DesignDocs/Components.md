@@ -90,6 +90,34 @@ SpawnAllExisting()
 - Spawns actors by reading disk and seeing where we left off. Called only on startup.
 
 
+## Database
+Each peer has access to a KV-store database that it can use to store any data it needs (such as customer account data).
+Could also just be a virtual filesystem backed by the actual file-system. The agent would know how to work with this right away.
+
+This should be a pretty simple KV-store interface, like follows:
+- SetValue(path, string)
+- GetValue(path)
+- DeleteValue(path)
+- ListValues(path)
+
+Not totally sure the best way to represent it yet. Could just be hashed paths on disk, or replace slashes with underscores, not sure.
+- That is probably fine to start. Later, could use an actual nice DB.
+
+
+## NotesManager
+The AI "brain" needs to be able to record some persistent notes that it can read on startup to understand its purpose, in-progress
+tasks, etc. Should have a simple notes interface for this. Each note is just name => string. By default, the agent's system prompt
+should tell it to read its "Purpose" note (set on init), its "Memory" note, and its "Tasks" note.
+
+Implemented in `src/notes/notes_manager.ts`. In-memory map is the source of truth, mirrored one-file-per-note to `notes/<name>.md`
+(the content is the file, so no manifest is needed); restored by reading the directory on `start()`. `SetNote` is an upsert.
+
+- SetNote(name, string)
+- GetNote(name)
+- DeleteNote(name)
+- ListNotes()
+
+
 ## More Notes
 
 ### Minimize dependencies
