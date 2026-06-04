@@ -98,10 +98,30 @@ This should be a pretty simple KV-store interface, like follows:
 - SetValue(path, string)
 - GetValue(path)
 - DeleteValue(path)
-- ListValues(path)
+- ListKeysWithPrefix(prefix)
 
-Not totally sure the best way to represent it yet. Could just be hashed paths on disk, or replace slashes with underscores, not sure.
-- That is probably fine to start. Later, could use an actual nice DB.
+Sets should use atomic write (write to tmp then rename).
+Reads should return Result type instead of throwing on error
+
+### Persistence
+
+For now, the database should be stored as a flat dir on disk, where each kv entry is a file where the name is the key percent-encoded.
+Instead of storing everything in memory (like the other mgrs), reads+writes should just operate on the underlying files.
+
+Later, can swap out to use an actual nice DB if needed.
+
+Implemented in `src/database/database.ts`. Flat `database/<percent-encoded-key>` layout (dots also escaped so a key can't become `.`/`..`/a dotfile),
+no in-memory cache, atomic writes (temp file + rename), and `getValue`/`listKeysWithPrefix` return a `Result` instead of throwing.
+
+### Add schemas?
+Arguably, each path should also contain the json schema of the value contained in it. Or, have a schema registry and assign each entry
+a name in the schema registry. Not sure if this is a good idea or just overcomplicates things.
+
+^ For V1, this will overcomplicate things, so do not do this. The whole point of the agent is that it is meant to be self-healing, so it
+should be able to adapt to errors when reading DB values for example.
+
+Later, if want to do the schemas thing, recommended to have a separate thing called "collections" where each entry in a collection strictly
+follows the collection schema.
 
 
 ## NotesManager
@@ -116,6 +136,74 @@ Implemented in `src/notes/notes_manager.ts`. In-memory map is the source of trut
 - GetNote(name)
 - DeleteNote(name)
 - ListNotes()
+
+
+## PortsManager
+PortsManager opens listening ports so that an Elf can behave as a server. Currently, the only
+supported protocol is HTTP. The PortsManager creates `HttpPeer` objects
+that register themselves as peers with the PeerManager. Each `HttpPeer` opens a
+listening port that, upon receiving an HTTP message, forwards it to PeerManager (like any other peer).
+Thus, having an Elf act like a server is just a matter of spawning an HttpPeer for it. From
+there, it reuses all the same mechanisms for functions+interfaces that any peer uses.
+
+The key idea: **an open port is just another kind of peer.** An inbound HTTP request is
+translated into the same `invokeFunction(funcName, inData)` call that an IPC request makes, so
+it passes through the identical access-control gate (the peer's assigned interface) and lands
+in FunctionManager.
+
+For comparison:
+  IPC:   forked child  --IpcPeer-->   PeerManager.invokeFunction --> FunctionManager
+  HTTP:  HTTP request  --HttpPeer-->  PeerManager.invokeFunction --> FunctionManager
+
+### HttpPeer (the transport)
+
+A concrete `AbstractPeer` over Node's built-in `http.Server` (zero deps). It is
+*inbound-only*: there is no single counterparty to push to, so `sendRpc` returns an error
+result ("http peer is inbound-only"). Its whole job is the inbound direction:
+
+  HTTP request  ->  (funcName, inData)  ->  managerHandle.invokeFunction  ->  CallResult  ->  HTTP response
+
+Request mapping (V1, deliberately minimal):
+  - `POST /<funcName>`, request body is `inData` (JSON text)
+  - 200 + output JSON text          on  { ok: true }
+  - 4xx/5xx + error string in body  on  { ok: false }  (e.g. 404 unknown/denied, 500 runtime)
+  - `GET /`  ->  health check / optional list of callable funcs in the assigned interface
+
+All anonymous clients of a port share a single peer identity — "the public edge for port N".
+Access is scoped per-port: open one port bound to interface `publicApi`, another bound to
+`adminApi`. The interface assigned to that peer IS the public API surface; nothing outside it
+is reachable. To expose more or less, change the peer's interface (PeerManager), not the port.
+
+Implemented in `src/peers/ports_manager.ts` (lifecycle + persistence) and `src/peers/http_peer.ts`
+(the transport). PortsManager binds the socket *before* attaching the peer, so a bind failure
+(e.g. port in use) throws without leaving a phantom peer; `port: 0` binds an ephemeral port and
+the resolved value is what gets persisted. HttpPeer maps `POST /<funcName>` (body = inData) to
+`invokeFunction`, `GET /` to a health check, and CallResult errors onto HTTP statuses
+(403 no interface / 404 unknown func / 400 bad input / 500 runtime), with a 1 MiB body cap.
+
+### API
+
+OpenPort(name, { port, host? })  - create+listen an http.Server, wrap in HttpPeer, attachPeer(name, ...)
+ClosePort(name)                  - stop listening, detachPeer(name) (keeps the binding)
+RemovePort(name)                 - close + forget (removePeer + drop from store)
+OpenAllExisting()                - on startup, reopen every persisted port
+listListening()
+
+### Persistence (mirrors SpawnManager)
+
+PortsManager persists only the *existence* bits it owns — `name -> { port, host }` — to
+`ports.json`. The interface binding is already persisted by PeerManager in `peers.json`. On
+restart, `OpenAllExisting()` reopens each socket and re-attaches it as a peer; PeerManager
+reapplies the remembered interface automatically. Same split as "SpawnManager owns the
+workspace dir, PeerManager owns the interface".
+
+### Security note
+
+`host` defaults to loopback (`127.0.0.1`); binding `0.0.0.0` to face the network is an explicit
+choice. The assigned interface is the only authz boundary — there is no per-client auth in V1,
+so a port's interface should expose exactly what is safe for any caller that can reach it. If an
+Elf wishes to implement some form of user auth (like for user accounts), it can implement that
+using normal functions, with shared libs and the database.
 
 
 ## More Notes
