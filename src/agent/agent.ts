@@ -14,28 +14,30 @@ export class Agent {
   private readonly llm: LLM;
   private readonly tools: Tool[];
   private readonly toolsByName: Map<string, Tool>;
-  private readonly history: Message[] = [];
+  private readonly history: Message[];
   private readonly inbox = new AsyncQueue<InboxItem>();
 
-  constructor(llm: LLM, tools: Tool[] = []) {
+  constructor(llm: LLM, tools: Tool[] = [], systemPrompt?: string) {
     this.llm = llm;
     this.tools = tools;
     this.toolsByName = new Map(tools.map((t) => [t.name, t]));
+    this.history = systemPrompt ? [{ role: "system", content: systemPrompt }] : [];
   }
 
   /**
    * Build an Agent from an `ElfConfig`. Anthropic is preferred when both
    * keys are present; throws if neither is set.
    */
-  static createAgent(config: ElfConfig, tools: Tool[] = []): Agent {
+  static createAgent(config: ElfConfig, tools: Tool[] = [], systemPrompt?: string): Agent {
     if (config.anthropicApiKey) {
       return new Agent(
         new AnthropicLLM({ apiKey: config.anthropicApiKey }),
         tools,
+        systemPrompt,
       );
     }
     if (config.openaiApiKey) {
-      return new Agent(new OpenAILLM({ apiKey: config.openaiApiKey }), tools);
+      return new Agent(new OpenAILLM({ apiKey: config.openaiApiKey }), tools, systemPrompt);
     }
     throw new Error(
       "Agent.createAgent: ElfConfig must include anthropicApiKey or openaiApiKey.",

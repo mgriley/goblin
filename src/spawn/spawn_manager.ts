@@ -10,16 +10,16 @@
  * interfaces; the binding (and its persistence) lives in PeerManager.
  *
  * A child's durable identity is its workspace directory under `childrenDir`
- * (holding a `purpose.md`). That directory — not any in-memory list — is the
+ * (holding a "Purpose" note). That directory — not any in-memory list — is the
  * source of truth for "which children should exist", so {@link spawnAllExisting}
  * can rebuild the whole set after a restart by reading the disk.
  */
 
 import { fork, type ChildProcess, type Serializable } from "node:child_process";
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, rm } from "node:fs/promises";
 import path from "node:path";
 
-import { checkIfDirExists, findAllSubdirs } from "../utils/utils.js";
+import { findAllSubdirs } from "../utils/utils.js";
 import { IpcPeer } from "./ipc_peer.js";
 import { assertValidPeerName, type PeerManager } from "../peers/peer_manager.js";
 
@@ -31,10 +31,12 @@ export interface SpawnManagerOptions {
   /** PeerManager to register each spawned child's connection with. */
   peerManager: PeerManager;
   /**
-   * Build the IPC init message handed to a freshly forked child (e.g. its config
-   * + workspace dir). Node buffers it until the child's event loop starts.
+   * Build the IPC init message handed to a freshly forked child. Receives the
+   * child's workspace dir and its purpose (undefined when respawning an existing
+   * child whose Purpose note already exists). Node buffers it until the child's
+   * event loop starts.
    */
-  initPayload: (childDir: string) => Serializable;
+  initPayload: (childDir: string, purpose?: string) => Serializable;
   /**
    * Extra `execArgv` for forked children. Defaults to forwarding the tsx loader
    * when the entry script is a `.ts` file, matching how this elf was launched.
@@ -47,7 +49,7 @@ export class SpawnManager {
   private readonly childrenDir: string;
   private readonly entryScript: string;
   private readonly peerManager: PeerManager;
-  private readonly initPayload: (childDir: string) => Serializable;
+  private readonly initPayload: (childDir: string, purpose?: string) => Serializable;
   private readonly execArgv: string[];
 
   constructor(opts: SpawnManagerOptions) {
@@ -61,9 +63,9 @@ export class SpawnManager {
   }
 
   /**
-   * Create a new child elf: ensure its workspace dir (with `purpose.md`) exists,
-   * then fork and connect it. The child's name is its directory name and its
-   * peer name. Throws if a child with this name is already running.
+   * Create a new child elf: ensure its workspace dir (with a "Purpose" note)
+   * exists, then fork and connect it. The child's name is its directory name
+   * and its peer name. Throws if a child with this name is already running.
    */
   async spawnActor(name: string, purpose: string): Promise<void> {
     // Reject bad names before they reach the filesystem: `name` becomes a
@@ -74,8 +76,8 @@ export class SpawnManager {
       throw new Error(`spawnActor: child "${name}" is already running`);
     }
     const childDir = path.join(this.childrenDir, name);
-    await this.ensureWorkDir(childDir, purpose);
-    await this.launch(name, childDir);
+    await this.ensureWorkDir(childDir);
+    await this.launch(name, childDir, purpose);
   }
 
   /**
@@ -120,9 +122,9 @@ export class SpawnManager {
   }
 
   /** Fork a child for `childDir`, register it as a peer, and track its process. */
-  private async launch(name: string, childDir: string): Promise<void> {
+  private async launch(name: string, childDir: string, purpose?: string): Promise<void> {
     const proc = fork(this.entryScript, [], { execArgv: this.execArgv });
-    proc.send(this.initPayload(childDir));
+    proc.send(this.initPayload(childDir, purpose));
     this.children.set(name, proc);
 
     // The child IPC channel becomes this peer's transport. Routing the factory
@@ -141,10 +143,8 @@ export class SpawnManager {
     });
   }
 
-  /** Create `childDir` with a `purpose.md` if it doesn't already exist. */
-  private async ensureWorkDir(childDir: string, purpose: string): Promise<void> {
-    if (await checkIfDirExists(childDir)) return;
+  /** Ensure `childDir` exists. No-op if already present. */
+  private async ensureWorkDir(childDir: string): Promise<void> {
     await mkdir(childDir, { recursive: true });
-    await writeFile(path.join(childDir, "purpose.md"), purpose);
   }
 }

@@ -16,7 +16,7 @@
  * notes) and brings child elves + ports back up where they left off.
  */
 
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
@@ -25,17 +25,21 @@ import { Schema } from "./utils/schema.js";
 
 import { Agent } from "./agent/agent.js";
 import { runCli } from "./cli.js";
-import { ROOT_PURPOSE } from "./root_purpose.js";
-import { runBashCommandTool } from "./tools.js";
-import { checkIfDirExists } from "./utils/utils.js";
+import { ELF_SYSTEM_PROMPT, ROOT_PURPOSE } from "./elf_prompt.js";
 
 import { Database } from "./database/database.js";
+import { databaseTools } from "./database/tools.js";
 import { FunctionManager } from "./functions/function_manager.js";
+import { functionManagerTools } from "./functions/tools.js";
 import { NotesManager } from "./notes/notes_manager.js";
+import { notesManagerTools } from "./notes/tools.js";
 import { PeerManager } from "./peers/peer_manager.js";
+import { peerManagerTools } from "./peers/tools.js";
 import { PortsManager } from "./ports/ports_manager.js";
+import { portsManagerTools } from "./ports/tools.js";
 import { IpcPeer, type IpcChannel } from "./spawn/ipc_peer.js";
 import { SpawnManager } from "./spawn/spawn_manager.js";
+import { spawnManagerTools } from "./spawn/tools.js";
 
 // Path to main.{js,ts} sitting next to this file. The extension follows our
 // current runtime: `.js` when running compiled output, `.ts` under tsx.
@@ -85,9 +89,9 @@ export class Elf {
     const config = await this.readConfigFile();
     console.log(`Loaded config...`);
 
-    await this.createWorkDir(config.rootDir, ROOT_PURPOSE);
+    await this.createWorkDir(config.rootDir);
     await Promise.all([
-      this.run(config, config.rootDir),
+      this.run(config, config.rootDir, ROOT_PURPOSE),
       // TODO - should the CLI just be a peer we register for root? Probs,
       // and calls built-in func for sending a msg to the agent.
       runCli((message) => this.agent.ask(message)),
@@ -97,21 +101,17 @@ export class Elf {
   /**
    * Boot this elf in `elfDir`: construct and start every component, reconnect to
    * the parent (if forked), restore child elves + ports, then run the agent loop.
+   * If `purpose` is provided and no Purpose note exists yet, it is written now.
    */
-  async run(config: ElfConfig, elfDir: string) {
+  async run(config: ElfConfig, elfDir: string, purpose?: string) {
     console.log(`Running an elf in ${elfDir}!`);
     process.chdir(elfDir);
     this.config = config;
     this.elfDir = elfDir;
 
-    // Construct the agent before any await so input arriving from the CLI or a
-    // peer can't race against an unset field while we're still booting. The
-    // manager operations aren't exposed as agent tools yet — that comes later.
-    this.agent = Agent.createAgent(config, [runBashCommandTool]);
-
-    // Build the components. PeerManager calls into FunctionManager (its access
-    // gate), and Spawn/Ports register their connections as peers, so those two
-    // take the PeerManager.
+    // Construct all managers synchronously first (no awaits), then build the
+    // agent with tools that close over them. Everything is still set before the
+    // first await, so a racing CLI or peer message can't find an unset field.
     this.functionManager = new FunctionManager(elfDir);
     this.peerManager = new PeerManager(elfDir, this.functionManager);
     this.database = new Database(elfDir);
@@ -120,9 +120,18 @@ export class Elf {
       childrenDir: path.join(elfDir, "children"),
       entryScript: ENTRY_SCRIPT,
       peerManager: this.peerManager,
-      initPayload: (childDir) => ({ config, elfDir: childDir }),
+      initPayload: (childDir, purpose) => ({ config, elfDir: childDir, purpose }),
     });
     this.portsManager = new PortsManager(elfDir, this.peerManager, this.functionManager);
+
+    this.agent = Agent.createAgent(config, [
+      ...functionManagerTools(this.functionManager),
+      ...databaseTools(this.database),
+      ...notesManagerTools(this.notesManager),
+      ...peerManagerTools(this.peerManager),
+      ...portsManagerTools(this.portsManager),
+      ...spawnManagerTools(this.spawnManager),
+    ], ELF_SYSTEM_PROMPT);
 
     // Restore persisted state. FunctionManager first so the interface bindings
     // PeerManager loads resolve against functions that already exist.
@@ -130,6 +139,9 @@ export class Elf {
     await this.peerManager.start();
     await this.database.start();
     await this.notesManager.start();
+    if (purpose && !this.notesManager.getNote("Purpose")) {
+      await this.notesManager.setNote("Purpose", purpose);
+    }
     await this.portsManager.start();
 
     // If we were forked, the same IPC channel that delivered our init message is
@@ -147,20 +159,20 @@ export class Elf {
     await this.spawnManager.spawnAllExisting();
     await this.portsManager.openAllExisting();
 
-    // TODO - feed the agent a first instruction once manager ops are tools.
+    // Queue a startup message before the loop begins so the agent boots into
+    // its purpose without waiting for external input.
+    void this.agent.ask(
+      "You have just started. Read your Purpose, Memory, and Tasks notes, then carry out your purpose.",
+    );
     await this.agent.runAgentLoop();
   }
 
   /**
-   * Create a fresh work directory at `dirPath` containing a `purpose.md` file
-   * with the given contents. If `dirPath` already exists, no-op. (Child work
-   * dirs are created by SpawnManager; this is for the root elf, which has no
-   * parent to spawn it.)
+   * Ensure the work directory at `dirPath` exists. No-op if already present.
+   * (Child work dirs are created by SpawnManager; this is for the root elf.)
    */
-  async createWorkDir(dirPath: string, purpose: string): Promise<void> {
-    if (await checkIfDirExists(dirPath)) return;
+  async createWorkDir(dirPath: string): Promise<void> {
     await mkdir(dirPath, { recursive: true });
-    await writeFile(path.join(dirPath, "purpose.md"), purpose);
   }
 
   private async readConfigFile(): Promise<ElfConfig> {
