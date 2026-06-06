@@ -94,7 +94,6 @@ export class Agent {
       this.history.push(assistantMessage);
 
       if (!response.toolCalls?.length) {
-        console.log(`[agent] ${response.text}`);
         return response.text;
       }
 

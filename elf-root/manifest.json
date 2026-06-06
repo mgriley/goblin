@@ -1,0 +1,42 @@
+{
+  "funcs": {
+    "add_numbers": {
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "a": {
+            "type": "number"
+          },
+          "b": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "a",
+          "b"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "result": {
+            "type": "number"
+          }
+        }
+      },
+      "sharedLibs": [
+        "math_ops"
+      ]
+    }
+  },
+  "libs": [
+    "math_ops"
+  ],
+  "interfaces": {
+    "general_math": {
+      "funcs": [
+        "add_numbers"
+      ]
+    }
+  }
+}

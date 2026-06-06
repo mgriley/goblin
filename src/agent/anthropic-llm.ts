@@ -7,6 +7,7 @@ import type {
   ToolCall,
   ToolDefinition,
 } from "./llm.js";
+import { toStandardJsonSchema } from "../utils/schema.js";
 
 export interface AnthropicLLMOptions {
   apiKey?: string;
@@ -180,7 +181,7 @@ function toAnthropicTool(tool: ToolDefinition): Record<string, unknown> {
   return {
     name: tool.name,
     description: tool.description,
-    input_schema: tool.parameters,
+    input_schema: toStandardJsonSchema(tool.parameters),
   };
 }
 

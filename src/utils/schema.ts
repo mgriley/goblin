@@ -192,6 +192,10 @@ function validateObject(
   for (const [key, sub] of Object.entries(schema.properties)) {
     const childPath = `${path}.${key}`;
     if (!(key in input) || input[key] === undefined) {
+      if (sub.type === "optional") {
+        out[key] = undefined;
+        continue;
+      }
       throw new SchemaError(childPath, "required property missing");
     }
     out[key] = validate(sub, input[key], childPath);
@@ -251,5 +255,76 @@ export class Schema<T = unknown> {
   /** The raw JSON Schema object — portable and safe to send to a peer. */
   toJSON(): JsonSchema {
     return this.definition;
+  }
+}
+
+/**
+ * Convert our internal {@link JsonSchema} dialect to standard JSON Schema
+ * draft 2020-12, suitable for use as an LLM tool `input_schema`.
+ *
+ * Our dialect adds types that have no direct JSON Schema equivalent:
+ *   - `optional`  → property is omitted from the parent object's `required`
+ *                   array; the inner schema is used as the property schema.
+ *   - `union`     → `anyOf`
+ *   - `literal`   → `const`
+ *   - `map`       → `{ type: "object", additionalProperties: <values schema> }`
+ *   - `any`       → `{}` (empty schema accepts everything)
+ */
+export function toStandardJsonSchema(schema: JsonSchema): Record<string, unknown> {
+  switch (schema.type) {
+    case "string":
+    case "number":
+    case "integer":
+    case "boolean": {
+      const r: Record<string, unknown> = { type: schema.type };
+      if (schema.description) r.description = schema.description;
+      return r;
+    }
+    case "array": {
+      const r: Record<string, unknown> = { type: "array", items: toStandardJsonSchema(schema.items) };
+      if (schema.description) r.description = schema.description;
+      return r;
+    }
+    case "object": {
+      const properties: Record<string, unknown> = {};
+      const required: string[] = [];
+      for (const [key, sub] of Object.entries(schema.properties)) {
+        if (sub.type === "optional") {
+          const inner = toStandardJsonSchema(sub.inner);
+          const desc = sub.description ?? sub.inner.description;
+          if (desc) (inner as Record<string, unknown>).description = desc;
+          properties[key] = inner;
+        } else {
+          properties[key] = toStandardJsonSchema(sub);
+          required.push(key);
+        }
+      }
+      const r: Record<string, unknown> = { type: "object", properties };
+      if (required.length) r.required = required;
+      if (schema.description) r.description = schema.description;
+      return r;
+    }
+    case "optional":
+      return toStandardJsonSchema(schema.inner);
+    case "union": {
+      const r: Record<string, unknown> = { anyOf: schema.anyOf.map(toStandardJsonSchema) };
+      if (schema.description) r.description = schema.description;
+      return r;
+    }
+    case "literal": {
+      const r: Record<string, unknown> = { const: schema.value };
+      if (schema.description) r.description = schema.description;
+      return r;
+    }
+    case "map": {
+      const r: Record<string, unknown> = { type: "object", additionalProperties: toStandardJsonSchema(schema.values) };
+      if (schema.description) r.description = schema.description;
+      return r;
+    }
+    case "any": {
+      const r: Record<string, unknown> = {};
+      if (schema.description) r.description = schema.description;
+      return r;
+    }
   }
 }

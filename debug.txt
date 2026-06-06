@@ -1,0 +1,76 @@
+Toolcalls:
+
+That's the full toolkit! Let me know what you'd like to build or do. 🚀
+Sure! Here's a breakdown of all my available tools, organized by manager:
+
+---
+
+### 🔧 FunctionManager (DONE)
+Manage reusable logic modules and access control:
+- **`create_func`** — Create a new function (ES module exporting `handle(input, libs)`)
+- **`modify_func`** — Replace a function's code (hot-reloaded)
+- **`remove_func`** — Delete a function
+- **`get_func`** — Read a function's code and schemas
+- **`list_funcs`** — List all defined functions
+- **`execute_func`** — Run a function by name
+- **`create_interface`** — Create a named group of functions to expose to a peer
+- **`modify_interface`** — Update the function membership of an interface
+- **`remove_interface`** — Delete an interface
+- **`get_interface`** — Read an interface's function list
+- **`list_interfaces`** — List all defined interfaces
+- **`create_shared_lib`** — Create a reusable helper library injectable into functions
+- **`modify_shared_lib`** — Replace a shared lib's code
+- **`remove_shared_lib`** — Delete a shared lib
+- **`get_shared_lib`** — Read a shared lib's code
+- **`list_shared_libs`** — List all shared libs
+- **`set_func_shared_libs`** — Set which shared libs are injected into a function
+
+---
+
+### 🌐 PeerManager
+Manage connections to other elves and HTTP ports:
+- **`peer_set_interface`** — Assign an interface to a peer (controls what it can call)
+- **`peer_get`** — Get a peer's current interface and connection status
+- **`peer_list`** — List all known peers
+- **`peer_call`** — Call a function on a connected peer
+
+---
+
+### 👶 SpawnManager
+Spawn and manage child elves:
+- **`spawn_actor`** — Create a new child elf with a name and purpose
+- **`remove_actor`** — Terminate a child elf and delete its workspace
+- **`list_running`** — List all currently running child elves
+
+---
+
+### 🌍 PortsManager
+Serve HTTP traffic:
+- **`port_open`** — Open a listening HTTP port
+- **`port_close`** — Stop listening on a port (keeps its record and handler)
+- **`port_remove`** — Close a port and remove it entirely
+- **`port_list`** — List all currently listening ports
+- **`port_get`** — Get the TCP port number for a listening port
+
+---
+
+### 🗄️ Database (GOOD)
+Persistent key-value storage:
+- **`db_set`** — Write a value to a key
+- **`db_get`** — Read a value by key
+- **`db_delete`** — Delete a key
+- **`db_list`** — List all keys with a given prefix
+
+---
+
+### 📝 NotesManager (GOOD)
+Persistent scratchpad for memory and tasks:
+- **`note_set`** — Create or overwrite a note
+- **`note_get`** — Read a note by name
+- **`note_delete`** — Delete a note
+- **`note_list`** — List all saved notes
+
+---
+
+### 🔌 Syscalls (GOOD)
+- **`list_syscalls`** — List all host-provided system calls available to functions at runtime
