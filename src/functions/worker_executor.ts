@@ -24,6 +24,7 @@ import type {
   FuncSpec,
   FunctionExecutor,
   LibSpec,
+  SystemInterface,
 } from "./function_executor.js";
 
 // The worker is plain `.mjs` (see worker.mjs for why) sitting next to this
@@ -39,6 +40,10 @@ const WORKER_SCRIPT = path.join(path.dirname(HERE), "worker.mjs");
 // structured-clone-friendly (no functions, no class instances) so it survives
 // `postMessage` and is trivial to reimplement in another language. worker.mjs
 // mirrors these shapes in JSDoc.
+//
+// In addition to the normal main→worker commands, the worker can issue a
+// syscall request (worker→main) which the main thread handles and replies to
+// with a syscallResponse (main→worker).
 // ---------------------------------------------------------------------------
 
 /** A single instruction for the worker (the request envelope's payload). */
@@ -71,6 +76,23 @@ interface ResponsePayload {
   error?: string;
 }
 
+/** Worker→main: a sys.call syscall request. */
+interface SystemCallRequest {
+  kind: "syscall";
+  callId: number;
+  name: string;
+  input: unknown;
+}
+
+/** Main→worker: the reply to a SystemCallRequest. */
+interface SystemCallResponse {
+  kind: "syscallResponse";
+  callId: number;
+  ok: boolean;
+  output?: unknown;
+  error?: string;
+}
+
 /** Outgoing envelope: an instruction tagged with a correlation id. */
 interface Request {
   id: number;
@@ -92,9 +114,16 @@ class ManagedWorker {
     { label: "function" },
   );
 
-  constructor() {
+  constructor(private readonly sys: SystemInterface) {
     this.worker = new Worker(WORKER_SCRIPT);
-    this.worker.on("message", (res: Response) => this.settle(res));
+    this.worker.on("message", (msg: Response | SystemCallRequest) => {
+      // Syscall from sys.call — dispatch and reply asynchronously.
+      if ((msg as SystemCallRequest).kind === "syscall") {
+        void this.dispatchSystemCall(msg as SystemCallRequest);
+      } else {
+        this.settle(msg as Response);
+      }
+    });
     this.worker.on("error", (err) =>
       this.tracker.rejectAll(
         err instanceof Error ? err : new Error(String(err)),
@@ -103,6 +132,18 @@ class ManagedWorker {
     this.worker.on("exit", () =>
       this.tracker.rejectAll(new Error("function worker exited")),
     );
+  }
+
+  private async dispatchSystemCall(msg: SystemCallRequest): Promise<void> {
+    let reply: SystemCallResponse;
+    try {
+      const output = await this.sys.call(msg.name, msg.input);
+      reply = { kind: "syscallResponse", callId: msg.callId, ok: true, output };
+    } catch (err) {
+      const error = err instanceof Error ? err.message : String(err);
+      reply = { kind: "syscallResponse", callId: msg.callId, ok: false, error };
+    }
+    this.worker.postMessage(reply);
   }
 
   /**
@@ -134,9 +175,9 @@ export class WorkerExecutor implements FunctionExecutor {
   private readonly workers: ManagedWorker[];
   private next = 0;
 
-  constructor(workerCount = 1) {
+  constructor(workerCount = 1, sys: SystemInterface) {
     const count = Math.max(1, workerCount);
-    this.workers = Array.from({ length: count }, () => new ManagedWorker());
+    this.workers = Array.from({ length: count }, () => new ManagedWorker(sys));
   }
 
   /** Load/hot-reload a function on every worker so any can serve it. */

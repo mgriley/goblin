@@ -144,6 +144,74 @@ describe("FunctionManager", () => {
     });
   });
 
+  describe("syscalls", () => {
+    const SCHEMA_VAL: JsonSchema = {
+      type: "object",
+      properties: { value: { type: "number" } },
+    };
+
+    it("calls a registered syscall and returns its output", async () => {
+      fm.registerSyscall(
+        "double",
+        SCHEMA_VAL,
+        NUMBER,
+        async (input) => (input as { value: number }).value * 2,
+      );
+      await fm.createFunc(
+        "useDouble",
+        `export async function handle(input) { return await sys.call("double", { value: input.value }); }`,
+        SCHEMA_VAL,
+        NUMBER,
+      );
+      const res = await fm.executeFunc("useDouble", JSON.stringify({ value: 7 }));
+      assert.deepEqual(res, { ok: true, value: "14" });
+    });
+
+    it("returns a structured error when the syscall is not registered", async () => {
+      await fm.createFunc(
+        "badCall",
+        `export async function handle() { return await sys.call("nope", {}); }`,
+        { type: "object", properties: {} },
+        NUMBER,
+      );
+      const res = await fm.executeFunc("badCall", "{}");
+      assert.equal(res.ok, false);
+      assert.match(res.ok ? "" : res.error, /nope/);
+    });
+
+    it("validates syscall input against its schema", async () => {
+      fm.registerSyscall("double", SCHEMA_VAL, NUMBER, async (input) =>
+        (input as { value: number }).value * 2,
+      );
+      await fm.createFunc(
+        "badInput",
+        `export async function handle() { return await sys.call("double", { value: "not a number" }); }`,
+        { type: "object", properties: {} },
+        NUMBER,
+      );
+      const res = await fm.executeFunc("badInput", "{}");
+      assert.equal(res.ok, false);
+    });
+
+    it("validates syscall output against its schema", async () => {
+      // fn returns a string but outputSchema expects a number
+      fm.registerSyscall(
+        "broken",
+        SCHEMA_VAL,
+        NUMBER,
+        async () => "oops" as unknown as number,
+      );
+      await fm.createFunc(
+        "callBroken",
+        `export async function handle(input) { return await sys.call("broken", { value: input.value }); }`,
+        SCHEMA_VAL,
+        NUMBER,
+      );
+      const res = await fm.executeFunc("callBroken", JSON.stringify({ value: 1 }));
+      assert.equal(res.ok, false);
+    });
+  });
+
   describe("interfaces", () => {
     beforeEach(async () => {
       await fm.createFunc("add", ADD_CODE, TWO_NUMBERS, NUMBER);

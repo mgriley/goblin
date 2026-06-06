@@ -29,7 +29,7 @@ import path from "node:path";
 
 import { validate, type JsonSchema } from "../utils/schema.js";
 import { hashContent, type Result } from "../utils/utils.js";
-import type { FunctionExecutor, FuncSpec } from "./function_executor.js";
+import type { FunctionExecutor, FuncSpec, SystemInterface } from "./function_executor.js";
 import { WorkerExecutor } from "./worker_executor.js";
 
 /** A single callable function. `code` is the source of its `<name>.mjs` file. */
@@ -68,6 +68,13 @@ export interface InterfaceDescription {
   }[];
 }
 
+/** A host-provided function callable from user functions via `sys.call`. */
+interface SyscallDef {
+  inputSchema: JsonSchema;
+  outputSchema: JsonSchema;
+  fn: (input: unknown) => Promise<unknown>;
+}
+
 /** Structured result of {@link FunctionManager.executeFunc} — JSON output text. */
 export type ExecResult = Result<string>;
 
@@ -100,7 +107,7 @@ export interface FunctionManagerOptions {
    * {@link WorkerExecutor}; override to swap in a different
    * {@link FunctionExecutor} (e.g. in-process for tests, or a remote runner).
    */
-  createExecutor?: (workerCount: number) => FunctionExecutor;
+  createExecutor?: (workerCount: number, sys: SystemInterface) => FunctionExecutor;
 }
 
 const DEFAULT_EXEC_TIMEOUT_MS = 30_000;
@@ -113,13 +120,17 @@ export class FunctionManager {
   private readonly funcs = new Map<string, FuncDef>();
   private readonly libs = new Map<string, SharedLibDef>();
   private readonly interfaces = new Map<string, InterfaceDef>();
+  private readonly syscalls = new Map<string, SyscallDef>();
 
   private readonly funcsDir: string;
   private readonly libsDir: string;
   private readonly manifestPath: string;
   private readonly execTimeoutMs: number;
   private readonly workerCount: number;
-  private readonly createExecutor: (workerCount: number) => FunctionExecutor;
+  private readonly createExecutor: (
+    workerCount: number,
+    sys: SystemInterface,
+  ) => FunctionExecutor;
 
   // Set in start(); the manager is unusable until then.
   private executor!: FunctionExecutor;
@@ -135,7 +146,7 @@ export class FunctionManager {
     this.execTimeoutMs = opts.execTimeoutMs ?? DEFAULT_EXEC_TIMEOUT_MS;
     this.workerCount = opts.workerCount ?? 1;
     this.createExecutor =
-      opts.createExecutor ?? ((count) => new WorkerExecutor(count));
+      opts.createExecutor ?? ((count, sys) => new WorkerExecutor(count, sys));
   }
 
   /**
@@ -148,7 +159,8 @@ export class FunctionManager {
     await mkdir(this.libsDir, { recursive: true });
     await this.restore();
 
-    this.executor = this.createExecutor(this.workerCount);
+    const sys: SystemInterface = { call: (name, input) => this.handleSyscall(name, input) };
+    this.executor = this.createExecutor(this.workerCount, sys);
     for (const record of this.funcs.values()) {
       await this.loadFunc(record);
     }
@@ -411,7 +423,36 @@ export class FunctionManager {
   }
 
   // -------------------------------------------------------------------------
-  // Internals
+  // System calls
+  // -------------------------------------------------------------------------
+
+  /**
+   * Register a host-provided function callable from user code via `sys.call(name, input)`.
+   * Input and output are validated against the supplied schemas, same as regular functions.
+   * 
+   * These registrations are not persisted. The expectation is that the elf's main script
+   * registers all the syscalls on startup.
+   */
+  registerSyscall(
+    name: string,
+    inputSchema: JsonSchema,
+    outputSchema: JsonSchema,
+    fn: (input: unknown) => Promise<unknown>,
+  ): void {
+    this.syscalls.set(name, { inputSchema, outputSchema, fn });
+  }
+
+  /** Validate input, invoke the syscall handler, validate output. */
+  private async handleSyscall(name: string, input: unknown): Promise<unknown> {
+    const def = this.syscalls.get(name);
+    if (!def) throw new Error(`no syscall "${name}"`);
+    const validInput = validate(def.inputSchema, input);
+    const output = await def.fn(validInput);
+    return validate(def.outputSchema, output);
+  }
+
+  // -------------------------------------------------------------------------
+  // Private helpers
   // -------------------------------------------------------------------------
 
   /**

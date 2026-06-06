@@ -29,16 +29,25 @@
 
 import { parentPort } from "node:worker_threads";
 import { pathToFileURL } from "node:url";
+import { sys, handleSystemCallResponse } from "./sys.mjs";
 
 if (!parentPort) {
   throw new Error("function worker must be started as a worker thread");
 }
 const port = parentPort;
 
+// Expose sys to all function modules loaded in this worker realm.
+globalThis.sys = sys;
+
 /** name -> { handle, libs } for every currently-loaded function. */
 const loaded = new Map();
 
 port.on("message", (/** @type {Request} */ req) => {
+  // syscallResponse is a reply to a sys.call — route it before normal dispatch.
+  if (req.kind === "syscallResponse") {
+    handleSystemCallResponse(req);
+    return;
+  }
   handle(req.payload).then(
     (output) => port.postMessage({ id: req.id, payload: { ok: true, output } }),
     (err) =>
@@ -72,7 +81,7 @@ async function handle(payload) {
     case "exec": {
       const entry = loaded.get(payload.name);
       if (!entry) throw new Error(`function "${payload.name}" is not loaded`);
-      return await entry.handle(payload.input, entry.libs);
+      return await entry.handle(payload.input, entry.libs); // sys available via globalThis
     }
     default:
       throw new Error(

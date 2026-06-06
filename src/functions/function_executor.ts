@@ -38,6 +38,11 @@ export interface ExecOptions {
   timeoutMs?: number;
 }
 
+/** The host-side interface passed to executors so worker code can call back into the elf. */
+export interface SystemInterface {
+  call(name: string, input: unknown): Promise<unknown>;
+}
+
 export interface FunctionExecutor {
   /** Load or hot-reload a function so it becomes callable via {@link executeFunc}. */
   loadFunc(spec: FuncSpec): Promise<void>;
