@@ -22,6 +22,14 @@ import process from "node:process";
 import { fileURLToPath } from "node:url";
 
 import { Schema } from "./utils/schema.js";
+import {
+  schemaAny,
+  schemaArr,
+  schemaObj,
+  schemaResult,
+  schemaStr,
+  schemaVoid,
+} from "./utils/schema_utils.js";
 
 import { Agent } from "./agent/agent.js";
 import { runCli } from "./cli.js";
@@ -143,6 +151,7 @@ export class Elf {
       await this.notesManager.setNote("Purpose", purpose);
     }
     await this.portsManager.start();
+    this.registerSyscalls();
 
     // If we were forked, the same IPC channel that delivered our init message is
     // the edge back to our parent — adopt it as a peer like any other.
@@ -165,6 +174,102 @@ export class Elf {
       "You have just started. Read your Purpose, Memory, and Tasks notes, then carry out your purpose.",
     );
     await this.agent.runAgentLoop();
+  }
+
+  /**
+   * Register all built-in syscalls. Called once in run() after every manager is
+   * started, so the lambdas can safely call into db, peers, etc. on first use.
+   */
+  private registerSyscalls(): void {
+    const fm = this.functionManager;
+
+    // ---- Database ----
+
+    fm.registerSyscall(
+      "db_set",
+      schemaObj({ key: schemaStr(), value: schemaStr() }),
+      schemaVoid(),
+      async (input) => {
+        const { key, value } = input as { key: string; value: string };
+        await this.database.setValue(key, value);
+        return {};
+      },
+    );
+
+    fm.registerSyscall(
+      "db_get",
+      schemaObj({ key: schemaStr() }),
+      schemaResult(schemaStr()),
+      async (input) => {
+        const { key } = input as { key: string };
+        return this.database.getValue(key);
+      },
+    );
+
+    fm.registerSyscall(
+      "db_delete",
+      schemaObj({ key: schemaStr() }),
+      schemaVoid(),
+      async (input) => {
+        const { key } = input as { key: string };
+        await this.database.deleteValue(key);
+        return {};
+      },
+    );
+
+    fm.registerSyscall(
+      "db_list_keys",
+      schemaObj({ prefix: schemaStr() }),
+      schemaResult(schemaArr(schemaStr())),
+      async (input) => {
+        const { prefix } = input as { prefix: string };
+        return this.database.listKeysWithPrefix(prefix);
+      },
+    );
+
+    // ---- Peers ----
+
+    fm.registerSyscall(
+      "call_peer",
+      schemaObj({ peer: schemaStr(), func: schemaStr(), input: schemaAny() }),
+      schemaResult(schemaAny()),
+      async (input) => {
+        const { peer, func, input: callInput } = input as { peer: string; func: string; input: unknown };
+        const result = await this.peerManager.callPeer(peer, func, JSON.stringify(callInput));
+        if (!result.ok) return result;
+        return { ok: true, value: JSON.parse(result.value) };
+      },
+    );
+
+    // ---- Local functions ----
+
+    fm.registerSyscall(
+      "call_func",
+      schemaObj({ name: schemaStr(), input: schemaAny() }),
+      schemaResult(schemaAny()),
+      async (input) => {
+        const { name, input: funcInput } = input as { name: string; input: unknown };
+        const result = await this.functionManager.executeFunc(name, JSON.stringify(funcInput));
+        if (!result.ok) return result;
+        return { ok: true, value: JSON.parse(result.value) };
+      },
+    );
+
+    // ---- Agent ----
+
+    // Note: calling this from a function triggered by the agent will deadlock,
+    // since the agent loop processes one turn at a time. Safe to use from
+    // peer-initiated or autonomously-running functions.
+    fm.registerSyscall(
+      "ask_agent",
+      schemaObj({ message: schemaStr() }),
+      schemaObj({ response: schemaStr() }),
+      async (input) => {
+        const { message } = input as { message: string };
+        const response = await this.agent.ask(message);
+        return { response };
+      },
+    );
   }
 
   /**

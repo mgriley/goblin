@@ -2,6 +2,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  schemaAny,
   schemaArr,
   schemaBool,
   schemaDescribe,
@@ -24,6 +25,7 @@ describe("schema_utils — builders emit the canonical JSON", () => {
     assert.deepEqual(schemaInt(), { type: "integer" });
     assert.deepEqual(schemaBool(), { type: "boolean" });
     assert.deepEqual(schemaLiteral(true), { type: "literal", value: true });
+    assert.deepEqual(schemaAny(), { type: "any" });
   });
 
   it("builds a map schema", () => {
@@ -102,5 +104,13 @@ describe("schema_utils — result helper", () => {
     const schema = resultSchema<number[]>(schemaArr(schemaInt()));
     assert.equal(schema.isValid({ ok: true, value: [1, 2, 3] }), true);
     assert.equal(schema.isValid({ ok: true, value: ["x"] }), false);
+  });
+
+  it("accepts any value type when combined with schemaAny", () => {
+    const schema = resultSchema<unknown>(schemaAny());
+    assert.deepEqual(schema.parse({ ok: true, value: { x: 1 } }), { ok: true, value: { x: 1 } });
+    assert.deepEqual(schema.parse({ ok: true, value: [1, 2, 3] }), { ok: true, value: [1, 2, 3] });
+    assert.deepEqual(schema.parse({ ok: true, value: "hello" }), { ok: true, value: "hello" });
+    assert.deepEqual(schema.parse({ ok: false, error: "oops" }), { ok: false, error: "oops" });
   });
 });

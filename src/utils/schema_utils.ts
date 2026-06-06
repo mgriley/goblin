@@ -14,6 +14,7 @@
 
 import {
   Schema,
+  type AnySchema,
   type ArraySchema,
   type BooleanSchema,
   type JsonSchema,
@@ -65,6 +66,16 @@ export function schemaMap(values: JsonSchema): MapSchema {
 /** Schema accepting `inner` or `null`. */
 export function schemaOptional(inner: JsonSchema): OptionalSchema {
   return { type: "optional", inner };
+}
+
+/** Schema that accepts any value and passes it through unchanged. */
+export function schemaAny(): AnySchema {
+  return { type: "any" };
+}
+
+/** Alias for {@link schemaAny} — use for syscalls/functions that return nothing meaningful. */
+export function schemaVoid(): AnySchema {
+  return { type: "any" };
 }
 
 /** Schema matching exactly `value` (strict equality). */

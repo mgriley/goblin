@@ -269,6 +269,26 @@ describe("validate — union", () => {
   });
 });
 
+describe("validate — any", () => {
+  it("accepts every JSON-compatible value and returns it unchanged", () => {
+    assert.equal(validate({ type: "any" }, "hi"), "hi");
+    assert.equal(validate({ type: "any" }, 42), 42);
+    assert.equal(validate({ type: "any" }, true), true);
+    assert.equal(validate({ type: "any" }, null), null);
+    assert.deepEqual(validate({ type: "any" }, [1, 2]), [1, 2]);
+    assert.deepEqual(validate({ type: "any" }, { x: 1 }), { x: 1 });
+  });
+
+  it("preserves a nested value inside an object property", () => {
+    const schema: JsonSchema = {
+      type: "object",
+      properties: { data: { type: "any" } },
+    };
+    const val = { nested: [1, 2, 3], flag: true };
+    assert.deepEqual(validate(schema, { data: val }), { data: val });
+  });
+});
+
 describe("validate — literal", () => {
   it("matches a fixed value by strict equality", () => {
     assert.equal(validate({ type: "literal", value: "go" }, "go"), "go");

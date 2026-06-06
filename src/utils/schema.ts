@@ -78,6 +78,11 @@ export interface MapSchema extends BaseSchema {
   values: JsonSchema;
 }
 
+/** Accepts any value and passes it through unchanged — no validation performed. */
+export interface AnySchema extends BaseSchema {
+  type: "any";
+}
+
 export type JsonSchema =
   | StringSchema
   | NumberSchema
@@ -87,7 +92,8 @@ export type JsonSchema =
   | OptionalSchema
   | LiteralSchema
   | UnionSchema
-  | MapSchema;
+  | MapSchema
+  | AnySchema;
 
 /** Thrown on the first validation failure, carrying the path to the bad value. */
 export class SchemaError extends Error {
@@ -111,6 +117,8 @@ export function validate(
   path = "$",
 ): unknown {
   switch (schema.type) {
+    case "any":
+      return value;
     case "optional":
       return value === null ? null : validate(schema.inner, value, path);
     case "literal":
