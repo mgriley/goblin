@@ -13,8 +13,11 @@ export function portsManagerTools(pm: PortsManager): Tool[] {
       name: "port_open",
       description:
         "Open a listening HTTP port. Automatically creates a `handleRequest_<name>` " +
-        "function (default: hello-world) and an `http_<name>` interface. Modify the " +
-        "handler via `modify_func` to customise routing and responses. " +
+        "function (default: hello-world) and an `http_<name>` interface. " +
+        "These are the designated entry points for all request handling on this port — " +
+        "use `modify_func` to update `handleRequest_<name>` with your routing/response logic, " +
+        "and grant peers access via the `http_<name>` interface. Do not create separate " +
+        "handler functions or interfaces for a port; use the ones that were auto-created. " +
         "`host` defaults to loopback (127.0.0.1); pass \"0.0.0.0\" to accept external connections.",
       parameters: {
         type: "object",

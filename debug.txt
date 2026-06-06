@@ -44,7 +44,7 @@ Spawn and manage child elves:
 
 ---
 
-### 🌍 PortsManager
+### 🌍 PortsManager (GOOD)
 Serve HTTP traffic:
 - **`port_open`** — Open a listening HTTP port
 - **`port_close`** — Stop listening on a port (keeps its record and handler)

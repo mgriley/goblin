@@ -257,6 +257,9 @@ export class Elf {
 
     // ---- Agent ----
 
+    // TODO - what is the below comment about? It should add the call to a mailbox.
+    // Should be no deadlock risk.
+    // vvvvvvvvvv
     // Note: calling this from a function triggered by the agent will deadlock,
     // since the agent loop processes one turn at a time. Safe to use from
     // peer-initiated or autonomously-running functions.
