@@ -75,6 +75,13 @@ interface SyscallDef {
   fn: (input: unknown) => Promise<unknown>;
 }
 
+/** Public description of a syscall — schemas only, no implementation. */
+export interface SyscallInfo {
+  name: string;
+  inputSchema: JsonSchema;
+  outputSchema: JsonSchema;
+}
+
 /** Structured result of {@link FunctionManager.executeFunc} — JSON output text. */
 export type ExecResult = Result<string>;
 
@@ -440,6 +447,15 @@ export class FunctionManager {
     fn: (input: unknown) => Promise<unknown>,
   ): void {
     this.syscalls.set(name, { inputSchema, outputSchema, fn });
+  }
+
+  /** Return the name and schemas of every registered syscall. */
+  listSyscalls(): SyscallInfo[] {
+    return [...this.syscalls.entries()].map(([name, def]) => ({
+      name,
+      inputSchema: def.inputSchema,
+      outputSchema: def.outputSchema,
+    }));
   }
 
   /** Validate input, invoke the syscall handler, validate output. */

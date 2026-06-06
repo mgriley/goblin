@@ -18,6 +18,7 @@ export function functionManagerTools(fm: FunctionManager): Tool[] {
     ...funcTools(fm),
     ...interfaceTools(fm),
     ...sharedLibTools(fm),
+    ...syscallTools(fm),
   ];
 }
 
@@ -364,6 +365,29 @@ function sharedLibTools(fm: FunctionManager): Tool[] {
         } catch (err) {
           return error(err);
         }
+      },
+    },
+  ];
+}
+
+// ---------------------------------------------------------------------------
+// System calls
+// ---------------------------------------------------------------------------
+
+function syscallTools(fm: FunctionManager): Tool[] {
+  return [
+    {
+      name: "list_syscalls",
+      description:
+        "List all system calls available to functions at runtime. Each syscall is a " +
+        "host-provided capability registered by the elf's main script. " +
+        "To call one from function code: `const result = await sys.call(name, input)` — " +
+        "`sys` is available at module scope without any import.",
+      parameters: { type: "object", properties: {} },
+      handler: async () => {
+        const syscalls = fm.listSyscalls();
+        if (!syscalls.length) return "(none)";
+        return JSON.stringify(syscalls, null, 2);
       },
     },
   ];
