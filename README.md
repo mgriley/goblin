@@ -1,7 +1,7 @@
 # Goblin
 
 Goblin is an experimental server that writes and revises itself at runtime. Just tell it what to make and it will happily grumble off and
-implement itself.
+implement itself :)
 
 ## Goblin in action
 
