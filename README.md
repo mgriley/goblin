@@ -5,10 +5,11 @@ implement itself.
 
 ## Goblin in action
 
-Goblin creates a notes app (recording):
+Making a chat app:
+See recording
 
-Goblin creates a chat app (recording): 
-
+Making a notes app:
+See recording
 
 Include the visualizations of some sample runs here! This is the main hook. Should be good-looking graphics of the goblin running in production!
 
