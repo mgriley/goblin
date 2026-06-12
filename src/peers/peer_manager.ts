@@ -111,12 +111,12 @@ export class PeerManager {
     if (existing) {
       existing.connection?.close();
       existing.connection = connection;
-      Logger.logEvent(`[peer] connected "${name}"`);
+      Logger.logEvent({ category: "peer", action: "connected", target: name });
       return; // binding unchanged → nothing to persist
     }
     this.peers.set(name, { name, interfaceName: null, connection });
     await this.persist(); // a newly-known peer is a change to the store
-    Logger.logEvent(`[peer] attached "${name}"`);
+    Logger.logEvent({ category: "peer", action: "attached", target: name });
   }
 
   /**
@@ -129,7 +129,7 @@ export class PeerManager {
     if (!entry?.connection) return;
     entry.connection.close();
     entry.connection = undefined;
-    Logger.logEvent(`[peer] detached "${name}"`);
+    Logger.logEvent({ category: "peer", action: "detached", target: name });
     // The binding is untouched, so there's nothing to persist.
   }
 
@@ -140,7 +140,7 @@ export class PeerManager {
     entry.connection?.close();
     this.peers.delete(name);
     await this.persist();
-    Logger.logEvent(`[peer] removed "${name}"`);
+    Logger.logEvent({ category: "peer", action: "removed", target: name });
   }
 
   /**
@@ -152,10 +152,11 @@ export class PeerManager {
     const entry = this.requirePeer(name);
     entry.interfaceName = interfaceName;
     await this.persist();
-    const msg = interfaceName
-      ? `[peer] set interface "${interfaceName}" on "${name}"`
-      : `[peer] cleared interface on "${name}"`;
-    Logger.logEvent(msg);
+    Logger.logEvent(
+      interfaceName
+        ? { category: "peer", action: "set interface", target: name, details: { interface: interfaceName } }
+        : { category: "peer", action: "cleared interface", target: name },
+    );
   }
 
   /** The interface bound to `name`, or null if none / unknown peer. */

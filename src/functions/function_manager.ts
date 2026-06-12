@@ -221,7 +221,7 @@ export class FunctionManager {
       throw err;
     }
     await this.persist();
-    Logger.logEvent(`[func] created "${name}"`);
+    Logger.logEvent({ category: "func", action: "created", target: name, details: { code } });
   }
 
   /** Replace a function's code, hot-reloading it. Rolls back on load failure. */
@@ -239,7 +239,7 @@ export class FunctionManager {
       throw err;
     }
     await this.persist();
-    Logger.logEvent(`[func] modified "${name}"`);
+    Logger.logEvent({ category: "func", action: "modified", target: name, details: { code: newCode } });
   }
 
   /** Remove a function and drop it from any interface that listed it. */
@@ -252,7 +252,7 @@ export class FunctionManager {
       iface.funcs = iface.funcs.filter((f) => f !== name);
     }
     await this.persist();
-    Logger.logEvent(`[func] removed "${name}"`);
+    Logger.logEvent({ category: "func", action: "removed", target: name });
   }
 
   getFunc(name: string): FuncDef | undefined {
@@ -321,7 +321,7 @@ export class FunctionManager {
     for (const f of funcs) this.requireFunc(f);
     this.interfaces.set(name, { name, funcs: [...funcs] });
     await this.persist();
-    Logger.logEvent(`[func] created interface "${name}"`);
+    Logger.logEvent({ category: "func", action: "created interface", target: name, details: { funcs } });
   }
 
   /** Replace the function membership of an interface. */
@@ -331,13 +331,13 @@ export class FunctionManager {
     for (const f of newFuncs) this.requireFunc(f);
     iface.funcs = [...newFuncs];
     await this.persist();
-    Logger.logEvent(`[func] modified interface "${name}"`);
+    Logger.logEvent({ category: "func", action: "modified interface", target: name, details: { funcs: newFuncs } });
   }
 
   async removeInterface(name: string): Promise<void> {
     if (!this.interfaces.delete(name)) return;
     await this.persist();
-    Logger.logEvent(`[func] removed interface "${name}"`);
+    Logger.logEvent({ category: "func", action: "removed interface", target: name });
   }
 
   getInterface(name: string): InterfaceDef | undefined {
@@ -382,7 +382,7 @@ export class FunctionManager {
     await writeFile(this.libPath(name), code);
     this.libs.set(name, { name, code });
     await this.persist();
-    Logger.logEvent(`[func] created lib "${name}"`);
+    Logger.logEvent({ category: "func", action: "created lib", target: name, details: { code } });
   }
 
   /** Replace a shared lib's code, hot-reloading every function that uses it. */
@@ -394,7 +394,7 @@ export class FunctionManager {
       if (record.sharedLibs.includes(name)) await this.loadFunc(record);
     }
     await this.persist();
-    Logger.logEvent(`[func] modified lib "${name}"`);
+    Logger.logEvent({ category: "func", action: "modified lib", target: name, details: { code: newCode } });
   }
 
   /** Remove a shared lib. Fails if any function still depends on it. */
@@ -411,7 +411,7 @@ export class FunctionManager {
     this.libs.delete(name);
     await rm(this.libPath(name), { force: true });
     await this.persist();
-    Logger.logEvent(`[func] removed lib "${name}"`);
+    Logger.logEvent({ category: "func", action: "removed lib", target: name });
   }
 
   /** Set the shared libs a function receives, reloading it. Rolls back on failure. */

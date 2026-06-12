@@ -81,7 +81,7 @@ export class Database {
       await rm(tmp, { force: true }); // don't leave a stray temp file behind
       throw err;
     }
-    Logger.logEvent(`[database] set "${key}"`);
+    Logger.logEvent({ category: "database", action: "set", target: key, details: { value } });
   }
 
   /**
@@ -103,7 +103,7 @@ export class Database {
   /** Remove the value at `key`. No-op if there's nothing there. */
   async deleteValue(key: string): Promise<void> {
     await rm(this.keyToPath(key), { force: true });
-    Logger.logEvent(`[database] deleted "${key}"`);
+    Logger.logEvent({ category: "database", action: "deleted", target: key });
   }
 
   /**

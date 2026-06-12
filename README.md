@@ -50,6 +50,8 @@ the generated scripts run in node WorkerThreads, which have access to APIs for r
 
 To be safe, please run Goblin in a docker container (see instructions in 'Running') or in an isolated VM. 
 
+Please also make sure that the API token you use is setup with limits and does not have auto-pay enabled.
+
 ## Development
 
 Goblin is currently written in typescript and uses the `node` runtime. The concept here can be easily recreated in any combo of

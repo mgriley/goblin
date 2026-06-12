@@ -72,7 +72,7 @@ export class SpawnManager {
     const childDir = path.join(this.childrenDir, name);
     await this.ensureWorkDir(childDir);
     await this.launch(name, childDir, purpose);
-    Logger.logEvent(`[spawn] spawned child "${name}"`);
+    Logger.logEvent({ category: "spawn", action: "spawned", target: name, details: { purpose } });
   }
 
   /**
@@ -96,7 +96,7 @@ export class SpawnManager {
     await this.terminate(name);
     await this.peerManager.removePeer(name);
     await rm(path.join(this.childrenDir, name), { recursive: true, force: true });
-    Logger.logEvent(`[spawn] removed child "${name}"`);
+    Logger.logEvent({ category: "spawn", action: "removed", target: name });
   }
 
   /** SIGTERM a running child and wait for it to exit. No-op if not running. */
@@ -134,7 +134,7 @@ export class SpawnManager {
       if (this.children.get(name) === proc) this.children.delete(name);
       this.peerManager.detachPeer(name);
       const reason = signal ?? (code !== null ? `code ${code}` : "unknown");
-      Logger.logEvent(`[spawn] child "${name}" exited (${reason})`);
+      Logger.logEvent({ category: "spawn", action: "exited", target: name, details: { reason } });
     });
     proc.on("error", (err) => {
       console.error(`[spawn] child "${name}" error:`, err);

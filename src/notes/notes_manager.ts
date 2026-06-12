@@ -57,7 +57,7 @@ export class NotesManager {
     assertValidName(name);
     await writeFile(this.notePath(name), content);
     this.notes.set(name, content);
-    Logger.logEvent(`[notes] set "${name}"`);
+    Logger.logEvent({ category: "notes", action: "set", target: name, details: { content } });
   }
 
   /** The note's content, or undefined if there's no such note. */
@@ -70,7 +70,7 @@ export class NotesManager {
     if (!this.notes.has(name)) return;
     this.notes.delete(name);
     await rm(this.notePath(name), { force: true });
-    Logger.logEvent(`[notes] deleted "${name}"`);
+    Logger.logEvent({ category: "notes", action: "deleted", target: name });
   }
 
   /** The names of all notes, in no particular order. */

@@ -159,7 +159,7 @@ export class PortsManager {
     const boundPort = actualPort(server) ?? options.port;
     this.ports.set(name, { name, port: boundPort, host, server });
     await this.persist();
-    Logger.logEvent(`[port] opened "${name}" on ${host}:${boundPort}`);
+    Logger.logEvent({ category: "port", action: "opened", target: name, details: { host, port: boundPort } });
   }
 
   /**
@@ -184,7 +184,7 @@ export class PortsManager {
     if (!entry?.server) return;
     entry.server = undefined;
     this.peerManager.detachPeer(name);
-    Logger.logEvent(`[port] closed "${name}"`);
+    Logger.logEvent({ category: "port", action: "closed", target: name });
   }
 
   /**
@@ -198,7 +198,7 @@ export class PortsManager {
     await this.functionManager.removeInterface(httpInterfaceName(name));
     await this.functionManager.removeFunc(handlerFuncName(name));
     await this.persist();
-    Logger.logEvent(`[port] removed "${name}"`);
+    Logger.logEvent({ category: "port", action: "removed", target: name });
   }
 
   /** Names of ports currently listening. */

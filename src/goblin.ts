@@ -135,7 +135,7 @@ export class Goblin {
     this.config = config;
     this.goblinDir = goblinDir;
     Logger.init(goblinDir);
-    Logger.logEvent("[goblin] started");
+    Logger.logEvent({ category: "goblin", action: "started" });
 
     // Construct all managers synchronously first (no awaits), then build the
     // agent with tools that close over them. Everything is still set before the
@@ -171,7 +171,9 @@ export class Goblin {
       await this.notesManager.setNote("Purpose", purpose);
     }
     const purposeNote = this.notesManager.getNote("Purpose");
-    if (purposeNote) Logger.logEvent(`[goblin] purpose: ${purposeNote.split("\n")[0].trim()}`);
+    if (purposeNote) {
+      Logger.logEvent({ category: "goblin", action: "purpose", details: { purpose: purposeNote } });
+    }
     await this.portsManager.start();
     this.registerSyscalls();
 
