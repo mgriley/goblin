@@ -1,7 +1,9 @@
-import { createServer, type ServerResponse } from "node:http";
+import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+
+import { readAgentSocket } from "../socket_server.js";
 
 const PORT = 7777;
 const SKIP = new Set([".git", "node_modules"]);
@@ -82,6 +84,56 @@ async function buildTree(dir: string, rootDir: string): Promise<unknown[]> {
   return children;
 }
 
+/**
+ * Forward a chat message to the goblin's agent socket, discovered via the
+ * `agent-socket.json` file in the root dir. Returns the agent's reply, or a
+ * 503 if the socket isn't published / reachable.
+ */
+async function askAgent(rootDir: string, req: IncomingMessage, res: ServerResponse): Promise<void> {
+  const info = await readAgentSocket(rootDir);
+  if (!info) {
+    res.writeHead(503, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: "agent socket not running (no agent-socket.json)" }));
+    return;
+  }
+
+  let message: string;
+  try {
+    const parsed = JSON.parse(await readBody(req)) as { message?: unknown };
+    if (typeof parsed.message !== "string") throw new Error("body must be { message: string }");
+    message = parsed.message;
+  } catch (err) {
+    res.writeHead(400, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: (err as Error).message }));
+    return;
+  }
+
+  // The published host may be a wildcard bind (0.0.0.0 / ::) we can't dial;
+  // connect over loopback in that case.
+  const host = info.host === "0.0.0.0" || info.host === "::" ? "127.0.0.1" : info.host;
+  try {
+    const upstream = await fetch(`http://${host}:${info.port}/ask-agent`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message }),
+    });
+    res.writeHead(upstream.status, { "Content-Type": "application/json" });
+    res.end(await upstream.text());
+  } catch (err) {
+    res.writeHead(502, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: `agent unreachable: ${(err as Error).message}` }));
+  }
+}
+
+function readBody(req: IncomingMessage): Promise<string> {
+  return new Promise((resolve, reject) => {
+    let data = "";
+    req.on("data", (chunk) => (data += chunk));
+    req.on("end", () => resolve(data));
+    req.on("error", reject);
+  });
+}
+
 export function startInspectorServer(rootDir: string): void {
   createServer(async (req, res) => {
     const url = new URL(req.url!, `http://localhost:${PORT}`);
@@ -96,6 +148,8 @@ export function startInspectorServer(rootDir: string): void {
         res.writeHead(500);
         res.end(JSON.stringify({ error: (err as Error).message }));
       }
+    } else if (url.pathname === "/ask" && req.method === "POST") {
+      await askAgent(rootDir, req, res);
     } else {
       await serveStatic(url.pathname, res);
     }

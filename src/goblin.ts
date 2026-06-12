@@ -49,6 +49,7 @@ import { IpcPeer, type IpcChannel } from "./spawn/ipc_peer.js";
 import { SpawnManager } from "./spawn/spawn_manager.js";
 import { spawnManagerTools } from "./spawn/tools.js";
 import { spawnScript } from "./utils/spawn.js";
+import { runSocketServer } from "./socket_server.js";
 
 
 // The peer name an goblin gives the IPC edge back to whoever forked it.
@@ -66,6 +67,10 @@ export interface GoblinConfig {
   rootDir: string;
   openaiApiKey?: string;
   anthropicApiKey?: string;
+  /** TCP port for the agent socket server. Omit to disable. */
+  socketPort?: number;
+  /** Bind address for the agent socket server. Defaults to 127.0.0.1. */
+  socketHost?: string;
 }
 
 export const GoblinConfigSchema = new Schema<GoblinConfig>({
@@ -74,6 +79,8 @@ export const GoblinConfigSchema = new Schema<GoblinConfig>({
     rootDir: { type: "string" },
     openaiApiKey: { type: "optional", inner: { type: "string" } },
     anthropicApiKey: { type: "optional", inner: { type: "string" } },
+    socketPort: { type: "optional", inner: { type: "number" } },
+    socketHost: { type: "optional", inner: { type: "string" } },
   },
 });
 
@@ -111,6 +118,9 @@ export class Goblin {
       // TODO - should the CLI just be a peer we register for root? Probs,
       // and calls built-in func for sending a msg to the agent.
       runCli((message) => this.agent.ask(message)),
+      config.socketPort !== undefined
+        ? runSocketServer((msg) => this.agent.ask(msg), config.rootDir, config.socketPort, config.socketHost)
+        : Promise.resolve(),
     ]);
   }
 

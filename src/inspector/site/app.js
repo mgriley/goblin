@@ -19,6 +19,9 @@ const tree = signal(null)
 const selectedPath = signal(null)
 const expanded = signal(new Set([''])) // root open by default
 const status = signal(null)            // null | { ok: bool, text: string }
+const view = signal('files')           // 'files' | 'chat'
+const messages = signal([])            // [{ role: 'user'|'agent', text, state? }]
+const sending = signal(false)
 
 // Find a node by path in the tree
 function findNode(node, target) {
@@ -62,9 +65,14 @@ function renderNode(node, depth = 0) {
 }
 
 // DOM refs
-const sidebar  = document.getElementById('sidebar')
-const content  = document.getElementById('content')
-const statusEl = document.getElementById('status')
+const sidebar   = document.getElementById('sidebar')
+const filesView = document.getElementById('files-view')
+const chatView  = document.getElementById('chat-view')
+const statusEl  = document.getElementById('status')
+const messagesEl = document.getElementById('messages')
+const chatInput = document.getElementById('chat-input')
+const chatSend  = document.getElementById('chat-send')
+const tabs      = document.querySelectorAll('.tab')
 
 // Re-render sidebar when tree, selection, or expanded state changes
 effect(() => {
@@ -74,14 +82,40 @@ effect(() => {
   sidebar.innerHTML = t ? renderNode(t) : '<div class="dim">Loading…</div>'
 })
 
-// Re-render content when selection or tree changes
+// Re-render file content when selection or tree changes
 effect(() => {
   const t = tree.get()
   const p = selectedPath.get()
-  if (!t || !p) { content.innerHTML = '<div class="dim">Select a file to inspect</div>'; return }
+  if (!t || !p) { filesView.innerHTML = '<div class="dim">Select a file to inspect</div>'; return }
   const node = findNode(t, p)
-  if (!node) { content.innerHTML = '<div class="dim">File not found</div>'; return }
-  content.innerHTML = `<div id="file-path">${esc(node.path)}</div><pre id="file-body">${esc(formatContent(node))}</pre>`
+  if (!node) { filesView.innerHTML = '<div class="dim">File not found</div>'; return }
+  filesView.innerHTML = `<div id="file-path">${esc(node.path)}</div><pre id="file-body">${esc(formatContent(node))}</pre>`
+})
+
+// Toggle between Files and Chat views
+effect(() => {
+  const v = view.get()
+  sidebar.style.display   = v === 'files' ? '' : 'none'
+  filesView.style.display = v === 'files' ? '' : 'none'
+  chatView.style.display  = v === 'chat'  ? 'flex' : 'none'
+  tabs.forEach(t => t.classList.toggle('active', t.dataset.view === v))
+  if (v === 'chat') chatInput.focus()
+})
+
+// Render chat messages
+effect(() => {
+  const msgs = messages.get()
+  messagesEl.innerHTML = msgs.length
+    ? msgs.map(m => `<div class="msg ${m.role}${m.state ? ' ' + m.state : ''}">${esc(m.text)}</div>`).join('')
+    : '<div class="dim">Send a message to the agent</div>'
+  messagesEl.scrollTop = messagesEl.scrollHeight
+})
+
+// Reflect send-in-progress on the composer
+effect(() => {
+  const busy = sending.get()
+  chatSend.disabled = busy
+  chatSend.textContent = busy ? '…' : 'Send'
 })
 
 // Update status chip
@@ -104,6 +138,55 @@ sidebar.addEventListener('click', e => {
     selectedPath.set(path)
   }
 })
+
+// Tab switching
+tabs.forEach(t => t.addEventListener('click', () => view.set(t.dataset.view)))
+
+// Send a chat message to the agent (via the inspector's /ask proxy)
+async function sendMessage() {
+  const text = chatInput.value.trim()
+  if (!text || sending.get()) return
+
+  messages.set([...messages.get(), { role: 'user', text }])
+  chatInput.value = ''
+  autoGrow()
+  sending.set(true)
+
+  // Optimistic pending bubble; replaced when the reply (or error) arrives.
+  const pending = { role: 'agent', text: 'thinking…', state: 'pending' }
+  messages.set([...messages.get(), pending])
+
+  try {
+    const res = await fetch('/ask', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: text }),
+    })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
+    pending.text = data.response ?? '(no response)'
+    pending.state = undefined
+  } catch (e) {
+    pending.text = `⚠ ${e.message}`
+    pending.state = 'error'
+  } finally {
+    messages.set([...messages.get()]) // re-render with the resolved bubble
+    sending.set(false)
+    chatInput.focus()
+  }
+}
+
+// Enter sends, Shift+Enter inserts a newline
+chatInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage() }
+})
+chatInput.addEventListener('input', autoGrow)
+chatSend.addEventListener('click', sendMessage)
+
+function autoGrow() {
+  chatInput.style.height = 'auto'
+  chatInput.style.height = Math.min(chatInput.scrollHeight, 120) + 'px'
+}
 
 // Poll /tree every 3 s
 async function fetchTree() {
