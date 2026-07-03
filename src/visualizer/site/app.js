@@ -233,6 +233,8 @@ var speed = signal(1);
 var selected = signal("");
 var slice = signal("notes");
 var status = signal(null);
+var recordings = signal([]);
+var currentFile = signal("");
 var SLICES = ["notes", "db", "funcs", "libs", "interfaces", "peers", "ports"];
 var SLICE_COLORS = {
   notes: CATEGORY_COLORS.notes,
@@ -252,6 +254,7 @@ var metaEl = document.getElementById("meta");
 var posEl = document.getElementById("position");
 var statusEl = document.getElementById("status");
 var playBtn = document.getElementById("play");
+var recSelect = document.getElementById("recordings");
 function esc(s) {
   return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
@@ -490,10 +493,39 @@ document.getElementById("step-fwd").addEventListener("click", () => {
   }
 });
 document.getElementById("speed").addEventListener("change", (e) => speed.set(Number(e.target.value)));
+effect(() => {
+  const recs = recordings.get();
+  const cur = currentFile.get();
+  if (recs.length > 1) {
+    recSelect.style.display = "";
+    recSelect.innerHTML = recs.map((r) => `<option value="${esc(r.name)}"${r.name === cur ? " selected" : ""}>${esc(r.name)}</option>`).join("");
+  } else {
+    recSelect.style.display = "none";
+  }
+});
+recSelect.addEventListener("change", () => {
+  currentFile.set(recSelect.value);
+  inited = false;
+  playing.set(false);
+  index.set(0);
+  fetchRecording();
+});
+async function fetchRecordingsList() {
+  try {
+    const res = await fetch("/recordings");
+    if (!res.ok) return;
+    const data = await res.json();
+    const recs = data.recordings ?? [];
+    recordings.set(recs);
+    if (!currentFile.get() && recs.length) currentFile.set(recs[0].name);
+  } catch {
+  }
+}
 var inited = false;
 async function fetchRecording() {
   try {
-    const res = await fetch("/recording");
+    const f = currentFile.get();
+    const res = await fetch("/recording" + (f ? `?file=${encodeURIComponent(f)}` : ""));
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     if (data.error) throw new Error(data.error);
@@ -507,5 +539,8 @@ async function fetchRecording() {
     status.set({ ok: false, text: `\u26A0 ${e.message}` });
   }
 }
-fetchRecording();
-setInterval(fetchRecording, 2e3);
+fetchRecordingsList().then(fetchRecording);
+setInterval(() => {
+  fetchRecordingsList();
+  fetchRecording();
+}, 2e3);

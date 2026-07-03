@@ -23,11 +23,12 @@
     #file { color: #90caf9; font-size: 12px; }
     #meta { color: #666; font-size: 11px; }
     #transport { display: flex; align-items: center; gap: 6px; margin-left: 24px; }
-    #transport button, #speed {
+    #transport button, #speed, #recordings {
       background: #1a1a1a; color: #ccc; border: 1px solid #444; border-radius: 4px;
       font-family: inherit; font-size: 12px; padding: 3px 9px; cursor: pointer;
     }
-    #transport button:hover, #speed:hover { background: #2a2a2a; }
+    #transport button:hover, #speed:hover, #recordings:hover { background: #2a2a2a; }
+    #recordings { max-width: 260px; }
     #play { min-width: 34px; }
     #position { color: #888; font-size: 11px; margin-left: 8px; white-space: nowrap; }
     #status { font-size: 11px; margin-left: auto; }
@@ -142,6 +143,7 @@
   <div id="app">
     <div id="topbar">
       <span class="title">Goblin Visualizer</span>
+      <select id="recordings" title="Switch recording" style="display:none"></select>
       <span id="file"></span>
       <span id="meta"></span>
       <div id="transport">

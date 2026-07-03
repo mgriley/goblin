@@ -1,9 +1,14 @@
 import { startVisualizerServer } from "./server.js";
 
-const recordingFile = process.argv[2];
-if (!recordingFile) {
-  console.error("visualizer/main: path to a recording (.jsonl) file required");
+const inputPath = process.argv[2];
+if (!inputPath) {
+  console.error(
+    "visualizer/main: pass a recording (.jsonl) file, or a goblin root / recordings dir",
+  );
   process.exit(1);
 }
 
-startVisualizerServer(recordingFile);
+startVisualizerServer(inputPath).catch((err) => {
+  console.error(`visualizer/main: ${(err as Error).message}`);
+  process.exit(1);
+});

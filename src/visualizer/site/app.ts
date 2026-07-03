@@ -45,6 +45,8 @@ const speed = signal(1)
 const selected = signal<string>("")           // focused goblin id ("" = root)
 const slice = signal<SliceKey>("notes")       // inspector subsystem tab
 const status = signal<{ ok: boolean; text: string } | null>(null)
+const recordings = signal<{ name: string }[]>([])  // available recordings (dir mode)
+const currentFile = signal<string>("")             // selected recording name ("" = server default)
 
 const SLICES: SliceKey[] = ["notes", "db", "funcs", "libs", "interfaces", "peers", "ports"]
 
@@ -73,6 +75,7 @@ const metaEl     = document.getElementById("meta")!
 const posEl      = document.getElementById("position")!
 const statusEl   = document.getElementById("status")!
 const playBtn    = document.getElementById("play") as HTMLButtonElement
+const recSelect  = document.getElementById("recordings") as HTMLSelectElement
 
 function esc(s: unknown): string {
   return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;")
@@ -335,12 +338,51 @@ document.getElementById("step-fwd")!.addEventListener("click", () => {
 document.getElementById("speed")!.addEventListener("change", e => speed.set(Number((e.target as HTMLSelectElement).value)))
 
 // ---------------------------------------------------------------------------
-// Data loading — poll the recording every 2s (reflects a growing recording)
+// Recording picker (dir mode) — a topbar dropdown, shown only when there's more
+// than one recording to choose from.
+// ---------------------------------------------------------------------------
+effect(() => {
+  const recs = recordings.get()
+  const cur = currentFile.get()
+  if (recs.length > 1) {
+    recSelect.style.display = ""
+    recSelect.innerHTML = recs
+      .map(r => `<option value="${esc(r.name)}"${r.name === cur ? " selected" : ""}>${esc(r.name)}</option>`)
+      .join("")
+  } else {
+    recSelect.style.display = "none"
+  }
+})
+
+recSelect.addEventListener("change", () => {
+  currentFile.set(recSelect.value)
+  // Fresh recording: reset the playhead and reseed to its end on next fetch.
+  inited = false
+  playing.set(false)
+  index.set(0)
+  fetchRecording()
+})
+
+async function fetchRecordingsList(): Promise<void> {
+  try {
+    const res = await fetch("/recordings")
+    if (!res.ok) return
+    const data = await res.json() as { recordings?: { name: string }[] }
+    const recs = data.recordings ?? []
+    recordings.set(recs)
+    if (!currentFile.get() && recs.length) currentFile.set(recs[0].name) // newest first
+  } catch { /* leave picker empty; single-recording fallback still works */ }
+}
+
+// ---------------------------------------------------------------------------
+// Data loading — poll the current recording every 2s (reflects a growing
+// recording), and refresh the recordings list so new ones appear in the picker.
 // ---------------------------------------------------------------------------
 let inited = false
 async function fetchRecording(): Promise<void> {
   try {
-    const res = await fetch("/recording")
+    const f = currentFile.get()
+    const res = await fetch("/recording" + (f ? `?file=${encodeURIComponent(f)}` : ""))
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
     const data = await res.json() as Recording & { error?: string }
     if (data.error) throw new Error(data.error)
@@ -351,5 +393,6 @@ async function fetchRecording(): Promise<void> {
     status.set({ ok: false, text: `⚠ ${(e as Error).message}` })
   }
 }
-fetchRecording()
-setInterval(fetchRecording, 2000)
+
+fetchRecordingsList().then(fetchRecording)
+setInterval(() => { fetchRecordingsList(); fetchRecording() }, 2000)
