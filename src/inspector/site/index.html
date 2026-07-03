@@ -31,6 +31,13 @@
     }
     .tab:hover { background: #2a2a2a; color: #ccc; }
     .tab.active { background: #1d3a5e; color: #fff; }
+    #record {
+      margin-left: auto; padding: 4px 12px; cursor: pointer;
+      border: 1px solid #444; border-radius: 4px; background: #1a1a1a;
+      color: #ccc; font-family: inherit; font-size: 12px; white-space: nowrap;
+    }
+    #record:hover { background: #2a2a2a; }
+    #record.recording { border-color: #f44336; color: #f44336; }
     #body { display: flex; flex: 1; overflow: hidden; background: #1a1a1a; }
     #sidebar {
       width: 280px; flex-shrink: 0; overflow-y: auto;
@@ -89,6 +96,7 @@
       <span class="tab" data-view="files">Files</span>
       <span class="tab" data-view="chat">Chat</span>
     </div>
+    <button id="record">● Record</button>
   </div>
   <div id="body">
     <div id="sidebar"></div>

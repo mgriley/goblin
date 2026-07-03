@@ -4,9 +4,10 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { readAgentSocket } from "../socket_server.js";
+import { Recorder } from "./recorder.js";
 
 const PORT = 7777;
-const SKIP = new Set([".git", "node_modules"]);
+const SKIP = new Set([".git", "node_modules", "recordings"]);
 
 const STATIC_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), "site");
 
@@ -134,7 +135,28 @@ function readBody(req: IncomingMessage): Promise<string> {
   });
 }
 
+/** Run a recorder action and reply with the resulting status JSON. */
+async function handleRecord(
+  recorder: Recorder,
+  pathname: string,
+  res: ServerResponse,
+): Promise<void> {
+  try {
+    let status;
+    if (pathname === "/record/start") status = await recorder.start();
+    else if (pathname === "/record/stop") status = await recorder.stop();
+    else status = recorder.status; // /record/status
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify(status));
+  } catch (err) {
+    res.writeHead(409, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: (err as Error).message }));
+  }
+}
+
 export function startInspectorServer(rootDir: string): void {
+  const recorder = new Recorder(rootDir);
+
   createServer(async (req, res) => {
     const url = new URL(req.url!, `http://localhost:${PORT}`);
 
@@ -150,6 +172,8 @@ export function startInspectorServer(rootDir: string): void {
       }
     } else if (url.pathname === "/ask" && req.method === "POST") {
       await askAgent(rootDir, req, res);
+    } else if (url.pathname.startsWith("/record/")) {
+      await handleRecord(recorder, url.pathname, res);
     } else {
       await serveStatic(url.pathname, res);
     }

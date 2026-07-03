@@ -22,6 +22,7 @@ const status = signal(null)            // null | { ok: bool, text: string }
 const view = signal('files')           // 'files' | 'chat'
 const messages = signal([])            // [{ role: 'user'|'agent', text, state? }]
 const sending = signal(false)
+const rec = signal({ recording: false, startedAt: null, events: 0 })
 
 // Find a node by path in the tree
 function findNode(node, target) {
@@ -73,6 +74,7 @@ const messagesEl = document.getElementById('messages')
 const chatInput = document.getElementById('chat-input')
 const chatSend  = document.getElementById('chat-send')
 const tabs      = document.querySelectorAll('.tab')
+const recordBtn = document.getElementById('record')
 
 // Re-render sidebar when tree, selection, or expanded state changes
 effect(() => {
@@ -118,6 +120,21 @@ effect(() => {
   chatSend.textContent = busy ? '…' : 'Send'
 })
 
+// Render the record button (label + elapsed + event count)
+function fmtElapsed(startedAt) {
+  const secs = Math.max(0, Math.floor((Date.now() - new Date(startedAt)) / 1000))
+  const m = String(Math.floor(secs / 60)).padStart(2, '0')
+  const s = String(secs % 60).padStart(2, '0')
+  return `${m}:${s}`
+}
+effect(() => {
+  const r = rec.get()
+  recordBtn.classList.toggle('recording', r.recording)
+  recordBtn.textContent = r.recording
+    ? `■ Stop  ${fmtElapsed(r.startedAt)} · ${r.events} ev`
+    : '● Record'
+})
+
 // Update status chip
 effect(() => {
   const s = status.get()
@@ -141,6 +158,30 @@ sidebar.addEventListener('click', e => {
 
 // Tab switching
 tabs.forEach(t => t.addEventListener('click', () => view.set(t.dataset.view)))
+
+// Record / Stop toggle
+recordBtn.addEventListener('click', async () => {
+  recordBtn.disabled = true
+  try {
+    const action = rec.get().recording ? '/record/stop' : '/record/start'
+    const res = await fetch(action, { method: 'POST' })
+    rec.set(await res.json())
+  } catch (e) {
+    status.set({ ok: false, text: `⚠ ${e.message}` })
+  } finally {
+    recordBtn.disabled = false
+  }
+})
+
+// Poll record status every 1s (keeps the live event count + elapsed fresh)
+async function fetchRecordStatus() {
+  try {
+    const res = await fetch('/record/status')
+    if (res.ok) rec.set(await res.json())
+  } catch { /* inspector momentarily unreachable — ignore */ }
+}
+fetchRecordStatus()
+setInterval(fetchRecordStatus, 1000)
 
 // Send a chat message to the agent (via the inspector's /ask proxy)
 async function sendMessage() {
