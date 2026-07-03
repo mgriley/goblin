@@ -20,20 +20,10 @@
 import { appendFile, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
+import type { GoblinState } from "../shared/events.js";
+
 const POLL_MS = 1000;
 const EVENT_LOG = "event_log.jsonl";
-
-/** Full state of one goblin at a moment in time. */
-interface GoblinSnapshot {
-  purpose: string | null;
-  notes: Record<string, string>;
-  db: Record<string, string>;
-  funcs: Record<string, { code: string; sharedLibs: string[] }>;
-  libs: Record<string, string>;
-  interfaces: Record<string, string[]>;
-  peers: Record<string, string | null>;
-  ports: Record<string, { host: string; port: number }>;
-}
 
 /** A structured event as stored per-goblin (see Logger). */
 interface RecordedEvent {
@@ -89,7 +79,7 @@ export class Recorder {
     // Baseline: snapshot every live goblin and set its cursor to the current end
     // of its log, so only events from *now on* are captured on top of the snapshot.
     const goblins = await discoverGoblins(this.rootDir);
-    const baseline: { id: string; state: GoblinSnapshot }[] = [];
+    const baseline: { id: string; state: GoblinState }[] = [];
     for (const g of goblins) {
       baseline.push({ id: g.id, state: await snapshotGoblin(g.dir) });
       this.cursors.set(g.id, await lastSeq(g.dir));
@@ -201,11 +191,9 @@ async function readEventsAfter(dir: string, after: number): Promise<RecordedEven
 // Baseline snapshot — reads each manager's on-disk format
 // ---------------------------------------------------------------------------
 
-async function snapshotGoblin(dir: string): Promise<GoblinSnapshot> {
-  const notes = await readNotes(dir);
+async function snapshotGoblin(dir: string): Promise<GoblinState> {
   return {
-    purpose: notes.Purpose ?? null,
-    notes,
+    notes: await readNotes(dir),
     db: await readDb(dir),
     ...(await readFunctions(dir)),
     peers: await readPeers(dir),
@@ -242,20 +230,20 @@ interface FunctionsStore {
 /** functions.json + funcs/<name>.mjs + libs/<name>.mjs → funcs/libs/interfaces. */
 async function readFunctions(
   dir: string,
-): Promise<Pick<GoblinSnapshot, "funcs" | "libs" | "interfaces">> {
+): Promise<Pick<GoblinState, "funcs" | "libs" | "interfaces">> {
   const store = await readJson<FunctionsStore>(path.join(dir, "functions.json"), {});
-  const funcs: GoblinSnapshot["funcs"] = {};
+  const funcs: GoblinState["funcs"] = {};
   for (const [name, meta] of Object.entries(store.funcs ?? {})) {
     funcs[name] = {
       code: await readText(path.join(dir, "funcs", `${name}.mjs`)),
       sharedLibs: meta.sharedLibs ?? [],
     };
   }
-  const libs: GoblinSnapshot["libs"] = {};
+  const libs: GoblinState["libs"] = {};
   for (const name of store.libs ?? []) {
     libs[name] = await readText(path.join(dir, "libs", `${name}.mjs`));
   }
-  const interfaces: GoblinSnapshot["interfaces"] = {};
+  const interfaces: GoblinState["interfaces"] = {};
   for (const [name, iface] of Object.entries(store.interfaces ?? {})) {
     interfaces[name] = iface.funcs ?? [];
   }

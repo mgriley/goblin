@@ -3,6 +3,8 @@ import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import type { RecordingEvent, RecordingHeader } from "../shared/events.js";
+
 const PORT = 7780;
 
 const STATIC_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), "site");
@@ -17,26 +19,6 @@ const MIME: Record<string, string> = {
   ".png": "image/png",
   ".woff2": "font/woff2",
 };
-
-/** The header written as line 0 of a recording (see Recorder). */
-interface RecordingHeader {
-  type: "header";
-  startedAt: string;
-  root: string;
-  goblins: { id: string; state: unknown }[];
-}
-
-/** An event line (line 1+) of a recording. */
-interface RecordingEvent {
-  type: "event";
-  goblinId: string;
-  ts: string;
-  seq: number;
-  category: string;
-  action: string;
-  target?: string;
-  details?: Record<string, unknown>;
-}
 
 async function serveStatic(urlPath: string, res: ServerResponse): Promise<void> {
   let filePath = path.join(STATIC_DIR, urlPath);
