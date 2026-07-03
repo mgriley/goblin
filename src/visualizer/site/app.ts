@@ -45,17 +45,29 @@ const speed = signal(1)
 const selected = signal<string>("")           // focused goblin id ("" = root)
 const slice = signal<SliceKey>("notes")       // inspector subsystem tab
 const status = signal<{ ok: boolean; text: string } | null>(null)
-const tick = signal(0)                        // bumped on resize to force re-layout
 
 const SLICES: SliceKey[] = ["notes", "db", "funcs", "libs", "interfaces", "peers", "ports"]
+
+/** Per-subsystem accent, so anatomy regions read like the rest of the UI. The
+ *  func family (funcs/libs/interfaces) shares category "func" but gets distinct
+ *  blue tints here so the three regions stay visually separable. */
+const SLICE_COLORS: Record<SliceKey, string> = {
+  notes: CATEGORY_COLORS.notes,
+  db: CATEGORY_COLORS.database,
+  funcs: CATEGORY_COLORS.func,
+  libs: "#4a7ab0",
+  interfaces: "#7fb0e0",
+  peers: CATEGORY_COLORS.peer,
+  ports: CATEGORY_COLORS.port,
+}
 
 // ---------------------------------------------------------------------------
 // DOM refs + helpers
 // ---------------------------------------------------------------------------
 const graphEl    = document.getElementById("graph")!
+const eventLog   = document.getElementById("event-log")!
 const eventCard  = document.getElementById("event-card")!
 const goblinPanel = document.getElementById("goblin-panel")!
-const timelineEl = document.getElementById("timeline")!
 const fileEl     = document.getElementById("file")!
 const metaEl     = document.getElementById("meta")!
 const posEl      = document.getElementById("position")!
@@ -79,79 +91,60 @@ const catColor = (cat: string): string => CATEGORY_COLORS[cat] ?? "#888"
 function curEvent(r: Recording): RecordingEvent | null {
   return r.events.length ? r.events[Math.min(index.get(), r.events.length - 1)] : null
 }
-/** Ordered goblin ids that get a timeline lane (baseline ∪ any event's goblin). */
-function laneIds(r: Recording): string[] {
-  const ids = new Set<string>((r.header?.goblins ?? []).map(g => g.id))
-  for (const e of r.events) ids.add(e.goblinId)
-  return [...ids].sort()
+/** Short display name for a goblin id (`""`→root, `children/foo`→foo). */
+function shortGoblin(id: string): string {
+  return id === "" ? "root" : id.split("/").pop()!
 }
 
 // ---------------------------------------------------------------------------
-// Network graph (SVG)
+// Anatomy view — every live goblin as a card of colour-coded subsystem regions,
+// each holding its entries as tiles. The entry touched by the current event
+// pulses in its subsystem colour, so it tracks playback. Cards indent by depth
+// so the parent→child topology still reads at a glance.
 // ---------------------------------------------------------------------------
-interface Layout { pos: Map<string, { depth: number; x: number }>; leaves: number; maxDepth: number }
-
-function computeLayout(nodes: GoblinNode[]): Layout {
-  const ids = new Set(nodes.map(n => n.id))
-  const childrenOf = new Map<string, string[]>()
-  for (const n of nodes) {
-    if (n.parentId !== null && ids.has(n.parentId)) {
-      const arr = childrenOf.get(n.parentId) ?? []
-      arr.push(n.id)
-      childrenOf.set(n.parentId, arr)
-    }
-  }
-  const roots = nodes.filter(n => n.parentId === null || !ids.has(n.parentId)).map(n => n.id).sort()
-  const pos = new Map<string, { depth: number; x: number }>()
-  let leaf = 0
-  let maxDepth = 0
-  const visit = (id: string, depth: number): number => {
-    maxDepth = Math.max(maxDepth, depth)
-    const kids = (childrenOf.get(id) ?? []).sort()
-    const x = kids.length
-      ? (() => { const xs = kids.map(k => visit(k, depth + 1)); return (xs[0] + xs[xs.length - 1]) / 2 })()
-      : leaf++
-    pos.set(id, { depth, x })
-    return x
-  }
-  roots.forEach(r => visit(r, 0))
-  return { pos, leaves: Math.max(1, leaf), maxDepth }
+/** Nesting depth of a goblin id (root = 0, each `/children/` adds one). */
+function goblinDepth(id: string): number {
+  return id === "" ? 0 : (id.match(/children\//g) ?? []).length
 }
 
-function renderGraph(r: Recording): void {
-  tick.get() // subscribe to resize
-  const W = graphEl.clientWidth || 800
-  const H = graphEl.clientHeight || 500
-  const nodes = topologyAt(r.header, r.events, index.get())
-  if (!nodes.length) { graphEl.innerHTML = '<div class="dim">No goblins</div>'; return }
-
-  const { pos, leaves, maxDepth } = computeLayout(nodes)
-  const padX = 70, padY = 55
-  const px = (x: number) => padX + (leaves > 1 ? x / (leaves - 1) : 0.5) * (W - 2 * padX)
-  const py = (d: number) => padY + (maxDepth > 0 ? d / maxDepth : 0.5) * (H - 2 * padY)
-
+function renderGoblinCard(n: GoblinNode, r: Recording, net: ReturnType<typeof replayTo>): string {
+  const state = net[n.id] ?? emptyGoblinState()
   const e = curEvent(r)
-  const sel = selected.get()
+  const touchSlice = e && e.goblinId === n.id ? lookup(e)?.slice ?? null : null
+  const touchKey = touchSlice ? e!.target ?? null : null
 
-  const edges = nodes
-    .filter(n => n.parentId !== null && pos.has(n.parentId))
-    .map(n => {
-      const c = pos.get(n.id)!, p = pos.get(n.parentId!)!
-      return `<line class="edge" x1="${px(p.x)}" y1="${py(p.depth)}" x2="${px(c.x)}" y2="${py(c.depth)}"/>`
+  const regions = SLICES.map(sk => {
+    const entries = sliceEntries(state, sk)
+    const keys = Object.keys(entries).sort()
+    const tiles = keys.map(k => {
+      const touched = sk === touchSlice && k === touchKey
+      return `<div class="tile${touched ? " touched" : ""}" data-slice="${sk}" title="${esc(trunc(entries[k], 240))}">${esc(k)}</div>`
     }).join("")
-
-  const circles = nodes.map(n => {
-    const p = pos.get(n.id)!
-    const affected = e?.goblinId === n.id
-    const cls = ["node", n.status === "exited" ? "exited" : "", n.id === sel ? "selected" : "", affected ? "affected" : ""].filter(Boolean).join(" ")
-    return `<g class="${cls}" data-goblin="${esc(n.id)}" transform="translate(${px(p.x)},${py(p.depth)})">
-        <circle class="ring" r="16" stroke="${affected && e ? catColor(e.category) : "transparent"}" stroke-width="2"/>
-        <circle class="body" r="16" fill="#22303f" stroke="#4a6a8a" stroke-width="1.5"/>
-        <text dy="32">${esc(n.name)}</text>
-      </g>`
+    return `<div class="region${keys.length ? "" : " empty"}${sk === touchSlice ? " active" : ""}" style="--c:${SLICE_COLORS[sk]}" data-slice="${sk}">
+        <div class="region-head"><span class="dot"></span>${sk}<span class="rn">${keys.length}</span></div>
+        ${keys.length ? `<div class="tiles">${tiles}</div>` : ""}
+      </div>`
   }).join("")
 
-  graphEl.innerHTML = `<svg viewBox="0 0 ${W} ${H}">${edges}${circles}</svg>`
+  const affected = e?.goblinId === n.id
+  const cls = ["gcard", n.status === "exited" ? "exited" : "", n.id === selected.get() ? "selected" : "", affected ? "affected" : ""].filter(Boolean).join(" ")
+  const styles = [`margin-left:${goblinDepth(n.id) * 18}px`]
+  if (affected && e) styles.push(`--ec:${catColor(e.category)}`)
+  return `<div class="${cls}" data-goblin="${esc(n.id)}" style="${styles.join(";")}">
+      <div class="gcard-head">
+        <span class="gc-name">${esc(n.name)}</span>
+        ${n.parentId !== null ? `<span class="gc-parent">◂ ${esc(shortGoblin(n.parentId))}</span>` : ""}
+        ${n.status === "exited" ? `<span class="gc-exited">exited</span>` : ""}
+      </div>
+      <div class="regions">${regions}</div>
+    </div>`
+}
+
+function renderAnatomy(r: Recording): void {
+  const nodes = topologyAt(r.header, r.events, index.get()).sort((a, b) => a.id.localeCompare(b.id))
+  if (!nodes.length) { graphEl.innerHTML = '<div class="dim">No goblins</div>'; return }
+  const net = replayTo(r.header, r.events, index.get())
+  graphEl.innerHTML = `<div class="anatomy">${nodes.map(n => renderGoblinCard(n, r, net)).join("")}</div>`
 }
 
 // ---------------------------------------------------------------------------
@@ -225,62 +218,40 @@ function renderGoblinPanel(r: Recording): void {
 }
 
 // ---------------------------------------------------------------------------
-// Swimlane timeline (SVG)
+// Event log (left) — the primary navigator
 // ---------------------------------------------------------------------------
-const GUTTER = 96, RPAD = 16, LANE_H = 22, TOP = 8
-
-function trackWidth(W: number): number { return Math.max(10, W - GUTTER - RPAD) }
-function eventX(i: number, n: number, W: number): number {
-  return GUTTER + (n > 1 ? i / (n - 1) : 0) * trackWidth(W)
+function buildLog(r: Recording): void {
+  eventLog.innerHTML = r.events.length
+    ? r.events.map((e, i) => `<div class="log-row" data-index="${i}">
+        <span class="l-seq">${i + 1}</span>
+        <span class="l-gob" title="${esc(e.goblinId || "root")}">${esc(shortGoblin(e.goblinId))}</span>
+        <span class="l-act" style="color:${catColor(e.category)}">${esc(e.category)}·${esc(e.action)}</span>
+        <span class="l-tgt">${e.target ? esc(e.target) : ""}</span>
+      </div>`).join("")
+    : '<div class="dim">No events</div>'
 }
 
-function renderTimeline(r: Recording): void {
-  tick.get()
-  const W = timelineEl.clientWidth || 800
-  const lanes = laneIds(r)
-  const laneY = (gid: string) => TOP + lanes.indexOf(gid) * LANE_H + LANE_H / 2
-  const H = TOP * 2 + lanes.length * LANE_H
-  const n = r.events.length
-
-  const bg = lanes.map((gid, li) => {
-    const y = TOP + li * LANE_H
-    return `<g><rect class="lane-bg" x="0" y="${y}" width="${W}" height="${LANE_H}"/>
-        <text class="lane-label" x="8" y="${y + LANE_H / 2 + 4}">${esc(gid || "root")}</text>
-        <line class="lane-sep" x1="0" y1="${y + LANE_H}" x2="${W}" y2="${y + LANE_H}"/></g>`
-  }).join("")
-
-  const cur = Math.min(index.get(), n - 1)
-  const ticks = r.events.map((e, i) => {
-    const cx = eventX(i, n, W)
-    return `<circle class="tick" data-index="${i}" cx="${cx}" cy="${laneY(e.goblinId)}" r="${i === cur ? 5 : 3}" fill="${catColor(e.category)}"/>`
-  }).join("")
-
-  const hx = eventX(cur, n, W)
-  const playhead = n
-    ? `<line class="playhead" x1="${hx}" y1="0" x2="${hx}" y2="${H}"/>
-       <path class="playhead-grip" d="M${hx - 5},0 L${hx + 5},0 L${hx},7 Z"/>`
-    : ""
-
-  timelineEl.innerHTML = `<svg width="${W}" height="${H}">${bg}${ticks}${playhead}</svg>`
-}
-
-// Scrub: map a client X to the nearest event index.
-function scrubToClientX(clientX: number): void {
-  const r = recording.get()
-  if (!r || r.events.length === 0) return
-  const rect = timelineEl.getBoundingClientRect()
-  const frac = (clientX - rect.left - GUTTER) / trackWidth(rect.width)
-  const i = Math.round(Math.max(0, Math.min(1, frac)) * (r.events.length - 1))
-  index.set(i)
+/** Move the active highlight to the current event and scroll it into view. */
+function highlightLog(r: Recording): void {
+  if (!r.events.length) return
+  const cur = Math.min(index.get(), r.events.length - 1)
+  eventLog.querySelector(".log-row.active")?.classList.remove("active")
+  const row = eventLog.querySelector<HTMLElement>(`.log-row[data-index="${cur}"]`)
+  if (row) { row.classList.add("active"); row.scrollIntoView({ block: "nearest" }) }
 }
 
 // ---------------------------------------------------------------------------
 // Reactive wiring
 // ---------------------------------------------------------------------------
-effect(() => { const r = recording.get(); if (r) renderGraph(r); else graphEl.innerHTML = '<div class="dim">Loading…</div>' })
+effect(() => {
+  const r = recording.get()
+  if (!r) { graphEl.innerHTML = '<div class="dim">Loading…</div>'; return }
+  renderAnatomy(r)
+})
 effect(() => { const r = recording.get(); if (r) renderEventCard(r) })
 effect(() => { const r = recording.get(); if (r) renderGoblinPanel(r) })
-effect(() => { const r = recording.get(); if (r) renderTimeline(r) })
+effect(() => { const r = recording.get(); if (r) buildLog(r) })       // list structure (on recording change)
+effect(() => { const r = recording.get(); if (r) highlightLog(r) })   // active row + autoscroll (on index change)
 
 effect(() => {
   const r = recording.get()
@@ -327,9 +298,15 @@ effect(() => {
 // ---------------------------------------------------------------------------
 // Interaction
 // ---------------------------------------------------------------------------
+// Anatomy view: click a goblin card to focus it in the inspector; clicking a
+// subsystem region also opens that slice tab.
 graphEl.addEventListener("click", e => {
-  const g = (e.target as Element).closest<SVGGElement>(".node")
-  if (g?.dataset.goblin !== undefined) selected.set(g.dataset.goblin)
+  const t = e.target as Element
+  const card = t.closest<HTMLElement>("[data-goblin]")
+  if (card?.dataset.goblin === undefined) return
+  selected.set(card.dataset.goblin)
+  const region = t.closest<HTMLElement>("[data-slice]")
+  if (region?.dataset.slice) slice.set(region.dataset.slice as SliceKey)
 })
 
 goblinPanel.addEventListener("click", e => {
@@ -337,11 +314,11 @@ goblinPanel.addEventListener("click", e => {
   if (t?.dataset.slice) slice.set(t.dataset.slice as SliceKey)
 })
 
-// Timeline scrubbing (click + drag).
-let dragging = false
-timelineEl.addEventListener("mousedown", e => { dragging = true; playing.set(false); scrubToClientX(e.clientX) })
-window.addEventListener("mousemove", e => { if (dragging) scrubToClientX(e.clientX) })
-window.addEventListener("mouseup", () => { dragging = false })
+// Event log — click a row to jump the playhead there.
+eventLog.addEventListener("click", e => {
+  const row = (e.target as HTMLElement).closest<HTMLElement>(".log-row")
+  if (row?.dataset.index !== undefined) { playing.set(false); index.set(Number(row.dataset.index)) }
+})
 
 // Transport buttons.
 document.getElementById("play")!.addEventListener("click", () => {
@@ -356,8 +333,6 @@ document.getElementById("step-fwd")!.addEventListener("click", () => {
   if (r) { playing.set(false); index.set(Math.min(r.events.length - 1, index.get() + 1)) }
 })
 document.getElementById("speed")!.addEventListener("change", e => speed.set(Number((e.target as HTMLSelectElement).value)))
-
-window.addEventListener("resize", () => tick.set(tick.get() + 1))
 
 // ---------------------------------------------------------------------------
 // Data loading — poll the recording every 2s (reflects a growing recording)

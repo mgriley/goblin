@@ -214,12 +214,20 @@ var speed = signal(1);
 var selected = signal("");
 var slice = signal("notes");
 var status = signal(null);
-var tick = signal(0);
 var SLICES = ["notes", "db", "funcs", "libs", "interfaces", "peers", "ports"];
+var SLICE_COLORS = {
+  notes: CATEGORY_COLORS.notes,
+  db: CATEGORY_COLORS.database,
+  funcs: CATEGORY_COLORS.func,
+  libs: "#4a7ab0",
+  interfaces: "#7fb0e0",
+  peers: CATEGORY_COLORS.peer,
+  ports: CATEGORY_COLORS.port
+};
 var graphEl = document.getElementById("graph");
+var eventLog = document.getElementById("event-log");
 var eventCard = document.getElementById("event-card");
 var goblinPanel = document.getElementById("goblin-panel");
-var timelineEl = document.getElementById("timeline");
 var fileEl = document.getElementById("file");
 var metaEl = document.getElementById("meta");
 var posEl = document.getElementById("position");
@@ -240,68 +248,50 @@ var catColor = (cat) => CATEGORY_COLORS[cat] ?? "#888";
 function curEvent(r) {
   return r.events.length ? r.events[Math.min(index.get(), r.events.length - 1)] : null;
 }
-function laneIds(r) {
-  const ids = new Set((r.header?.goblins ?? []).map((g) => g.id));
-  for (const e of r.events) ids.add(e.goblinId);
-  return [...ids].sort();
+function shortGoblin(id) {
+  return id === "" ? "root" : id.split("/").pop();
 }
-function computeLayout(nodes) {
-  const ids = new Set(nodes.map((n) => n.id));
-  const childrenOf = /* @__PURE__ */ new Map();
-  for (const n of nodes) {
-    if (n.parentId !== null && ids.has(n.parentId)) {
-      const arr = childrenOf.get(n.parentId) ?? [];
-      arr.push(n.id);
-      childrenOf.set(n.parentId, arr);
-    }
-  }
-  const roots = nodes.filter((n) => n.parentId === null || !ids.has(n.parentId)).map((n) => n.id).sort();
-  const pos = /* @__PURE__ */ new Map();
-  let leaf = 0;
-  let maxDepth = 0;
-  const visit = (id, depth) => {
-    maxDepth = Math.max(maxDepth, depth);
-    const kids = (childrenOf.get(id) ?? []).sort();
-    const x = kids.length ? (() => {
-      const xs = kids.map((k) => visit(k, depth + 1));
-      return (xs[0] + xs[xs.length - 1]) / 2;
-    })() : leaf++;
-    pos.set(id, { depth, x });
-    return x;
-  };
-  roots.forEach((r) => visit(r, 0));
-  return { pos, leaves: Math.max(1, leaf), maxDepth };
+function goblinDepth(id) {
+  return id === "" ? 0 : (id.match(/children\//g) ?? []).length;
 }
-function renderGraph(r) {
-  tick.get();
-  const W = graphEl.clientWidth || 800;
-  const H = graphEl.clientHeight || 500;
-  const nodes = topologyAt(r.header, r.events, index.get());
+function renderGoblinCard(n, r, net) {
+  const state = net[n.id] ?? emptyGoblinState();
+  const e = curEvent(r);
+  const touchSlice = e && e.goblinId === n.id ? lookup(e)?.slice ?? null : null;
+  const touchKey = touchSlice ? e.target ?? null : null;
+  const regions = SLICES.map((sk) => {
+    const entries = sliceEntries(state, sk);
+    const keys = Object.keys(entries).sort();
+    const tiles = keys.map((k) => {
+      const touched = sk === touchSlice && k === touchKey;
+      return `<div class="tile${touched ? " touched" : ""}" data-slice="${sk}" title="${esc(trunc(entries[k], 240))}">${esc(k)}</div>`;
+    }).join("");
+    return `<div class="region${keys.length ? "" : " empty"}${sk === touchSlice ? " active" : ""}" style="--c:${SLICE_COLORS[sk]}" data-slice="${sk}">
+        <div class="region-head"><span class="dot"></span>${sk}<span class="rn">${keys.length}</span></div>
+        ${keys.length ? `<div class="tiles">${tiles}</div>` : ""}
+      </div>`;
+  }).join("");
+  const affected = e?.goblinId === n.id;
+  const cls = ["gcard", n.status === "exited" ? "exited" : "", n.id === selected.get() ? "selected" : "", affected ? "affected" : ""].filter(Boolean).join(" ");
+  const styles = [`margin-left:${goblinDepth(n.id) * 18}px`];
+  if (affected && e) styles.push(`--ec:${catColor(e.category)}`);
+  return `<div class="${cls}" data-goblin="${esc(n.id)}" style="${styles.join(";")}">
+      <div class="gcard-head">
+        <span class="gc-name">${esc(n.name)}</span>
+        ${n.parentId !== null ? `<span class="gc-parent">\u25C2 ${esc(shortGoblin(n.parentId))}</span>` : ""}
+        ${n.status === "exited" ? `<span class="gc-exited">exited</span>` : ""}
+      </div>
+      <div class="regions">${regions}</div>
+    </div>`;
+}
+function renderAnatomy(r) {
+  const nodes = topologyAt(r.header, r.events, index.get()).sort((a, b) => a.id.localeCompare(b.id));
   if (!nodes.length) {
     graphEl.innerHTML = '<div class="dim">No goblins</div>';
     return;
   }
-  const { pos, leaves, maxDepth } = computeLayout(nodes);
-  const padX = 70, padY = 55;
-  const px = (x) => padX + (leaves > 1 ? x / (leaves - 1) : 0.5) * (W - 2 * padX);
-  const py = (d) => padY + (maxDepth > 0 ? d / maxDepth : 0.5) * (H - 2 * padY);
-  const e = curEvent(r);
-  const sel = selected.get();
-  const edges = nodes.filter((n) => n.parentId !== null && pos.has(n.parentId)).map((n) => {
-    const c = pos.get(n.id), p = pos.get(n.parentId);
-    return `<line class="edge" x1="${px(p.x)}" y1="${py(p.depth)}" x2="${px(c.x)}" y2="${py(c.depth)}"/>`;
-  }).join("");
-  const circles = nodes.map((n) => {
-    const p = pos.get(n.id);
-    const affected = e?.goblinId === n.id;
-    const cls = ["node", n.status === "exited" ? "exited" : "", n.id === sel ? "selected" : "", affected ? "affected" : ""].filter(Boolean).join(" ");
-    return `<g class="${cls}" data-goblin="${esc(n.id)}" transform="translate(${px(p.x)},${py(p.depth)})">
-        <circle class="ring" r="16" stroke="${affected && e ? catColor(e.category) : "transparent"}" stroke-width="2"/>
-        <circle class="body" r="16" fill="#22303f" stroke="#4a6a8a" stroke-width="1.5"/>
-        <text dy="32">${esc(n.name)}</text>
-      </g>`;
-  }).join("");
-  graphEl.innerHTML = `<svg viewBox="0 0 ${W} ${H}">${edges}${circles}</svg>`;
+  const net = replayTo(r.header, r.events, index.get());
+  graphEl.innerHTML = `<div class="anatomy">${nodes.map((n) => renderGoblinCard(n, r, net)).join("")}</div>`;
 }
 function renderPanelEntry(d, touched) {
   let v;
@@ -359,51 +349,31 @@ function renderGoblinPanel(r) {
   goblinPanel.innerHTML = `<div class="gp-head">${esc(gid || "root")}</div>
     <div id="tabs">${tabs}</div>${rows}`;
 }
-var GUTTER = 96;
-var RPAD = 16;
-var LANE_H = 22;
-var TOP = 8;
-function trackWidth(W) {
-  return Math.max(10, W - GUTTER - RPAD);
+function buildLog(r) {
+  eventLog.innerHTML = r.events.length ? r.events.map((e, i) => `<div class="log-row" data-index="${i}">
+        <span class="l-seq">${i + 1}</span>
+        <span class="l-gob" title="${esc(e.goblinId || "root")}">${esc(shortGoblin(e.goblinId))}</span>
+        <span class="l-act" style="color:${catColor(e.category)}">${esc(e.category)}\xB7${esc(e.action)}</span>
+        <span class="l-tgt">${e.target ? esc(e.target) : ""}</span>
+      </div>`).join("") : '<div class="dim">No events</div>';
 }
-function eventX(i, n, W) {
-  return GUTTER + (n > 1 ? i / (n - 1) : 0) * trackWidth(W);
-}
-function renderTimeline(r) {
-  tick.get();
-  const W = timelineEl.clientWidth || 800;
-  const lanes = laneIds(r);
-  const laneY = (gid) => TOP + lanes.indexOf(gid) * LANE_H + LANE_H / 2;
-  const H = TOP * 2 + lanes.length * LANE_H;
-  const n = r.events.length;
-  const bg = lanes.map((gid, li) => {
-    const y = TOP + li * LANE_H;
-    return `<g><rect class="lane-bg" x="0" y="${y}" width="${W}" height="${LANE_H}"/>
-        <text class="lane-label" x="8" y="${y + LANE_H / 2 + 4}">${esc(gid || "root")}</text>
-        <line class="lane-sep" x1="0" y1="${y + LANE_H}" x2="${W}" y2="${y + LANE_H}"/></g>`;
-  }).join("");
-  const cur = Math.min(index.get(), n - 1);
-  const ticks = r.events.map((e, i) => {
-    const cx = eventX(i, n, W);
-    return `<circle class="tick" data-index="${i}" cx="${cx}" cy="${laneY(e.goblinId)}" r="${i === cur ? 5 : 3}" fill="${catColor(e.category)}"/>`;
-  }).join("");
-  const hx = eventX(cur, n, W);
-  const playhead = n ? `<line class="playhead" x1="${hx}" y1="0" x2="${hx}" y2="${H}"/>
-       <path class="playhead-grip" d="M${hx - 5},0 L${hx + 5},0 L${hx},7 Z"/>` : "";
-  timelineEl.innerHTML = `<svg width="${W}" height="${H}">${bg}${ticks}${playhead}</svg>`;
-}
-function scrubToClientX(clientX) {
-  const r = recording.get();
-  if (!r || r.events.length === 0) return;
-  const rect = timelineEl.getBoundingClientRect();
-  const frac = (clientX - rect.left - GUTTER) / trackWidth(rect.width);
-  const i = Math.round(Math.max(0, Math.min(1, frac)) * (r.events.length - 1));
-  index.set(i);
+function highlightLog(r) {
+  if (!r.events.length) return;
+  const cur = Math.min(index.get(), r.events.length - 1);
+  eventLog.querySelector(".log-row.active")?.classList.remove("active");
+  const row = eventLog.querySelector(`.log-row[data-index="${cur}"]`);
+  if (row) {
+    row.classList.add("active");
+    row.scrollIntoView({ block: "nearest" });
+  }
 }
 effect(() => {
   const r = recording.get();
-  if (r) renderGraph(r);
-  else graphEl.innerHTML = '<div class="dim">Loading\u2026</div>';
+  if (!r) {
+    graphEl.innerHTML = '<div class="dim">Loading\u2026</div>';
+    return;
+  }
+  renderAnatomy(r);
 });
 effect(() => {
   const r = recording.get();
@@ -415,7 +385,11 @@ effect(() => {
 });
 effect(() => {
   const r = recording.get();
-  if (r) renderTimeline(r);
+  if (r) buildLog(r);
+});
+effect(() => {
+  const r = recording.get();
+  if (r) highlightLog(r);
 });
 effect(() => {
   const r = recording.get();
@@ -461,24 +435,23 @@ effect(() => {
   }, 600 / sp);
 });
 graphEl.addEventListener("click", (e) => {
-  const g = e.target.closest(".node");
-  if (g?.dataset.goblin !== void 0) selected.set(g.dataset.goblin);
+  const t = e.target;
+  const card = t.closest("[data-goblin]");
+  if (card?.dataset.goblin === void 0) return;
+  selected.set(card.dataset.goblin);
+  const region = t.closest("[data-slice]");
+  if (region?.dataset.slice) slice.set(region.dataset.slice);
 });
 goblinPanel.addEventListener("click", (e) => {
   const t = e.target.closest(".tab");
   if (t?.dataset.slice) slice.set(t.dataset.slice);
 });
-var dragging = false;
-timelineEl.addEventListener("mousedown", (e) => {
-  dragging = true;
-  playing.set(false);
-  scrubToClientX(e.clientX);
-});
-window.addEventListener("mousemove", (e) => {
-  if (dragging) scrubToClientX(e.clientX);
-});
-window.addEventListener("mouseup", () => {
-  dragging = false;
+eventLog.addEventListener("click", (e) => {
+  const row = e.target.closest(".log-row");
+  if (row?.dataset.index !== void 0) {
+    playing.set(false);
+    index.set(Number(row.dataset.index));
+  }
 });
 document.getElementById("play").addEventListener("click", () => {
   const r = recording.get();
@@ -498,7 +471,6 @@ document.getElementById("step-fwd").addEventListener("click", () => {
   }
 });
 document.getElementById("speed").addEventListener("change", (e) => speed.set(Number(e.target.value)));
-window.addEventListener("resize", () => tick.set(tick.get() + 1));
 var inited = false;
 async function fetchRecording() {
   try {
