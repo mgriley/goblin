@@ -172,4 +172,16 @@ for (const [name, iface] of [["worker-a", "build"], ["worker-b", "build"], ["wor
   ev(FORGE, "peer", "set interface", name, { interface: iface });
 }
 
+// --- a burst of access/activity events (all transient — they highlight an entry
+//     but don't change persisted state) ------------------------------------
+ev(FORGE, "agent", "query", undefined, { query: "What's the build status for release 3.2, and are all workers healthy?" });
+ev(FORGE, "notes", "read", "Runbook");
+ev(FORGE, "database", "read", "featureFlags");
+ev(FORGE, "func", "called", "runPipeline");
+ev(FORGE, "peer", "call", "worker-a", { func: "runPipeline" });       // we call a peer
+ev(FORGE, "peer", "response", "worker-a", { func: "runPipeline", ok: true });
+ev(FORGE, "peer", "request", "cache", { func: "healthCheck" });       // a peer calls us
+ev(FORGE, "peer", "served", "cache", { func: "healthCheck", ok: true });
+ev(FORGE, "agent", "response", undefined, { response: "Release 3.2 built OK (48213 total builds). worker-a/b/c healthy; cache responding. No blockers." });
+
 process.stdout.write(lines.join("\n") + "\n");

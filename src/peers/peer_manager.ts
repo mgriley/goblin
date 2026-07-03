@@ -169,10 +169,14 @@ export class PeerManager {
    * peer is unknown or not currently connected.
    */
   async callPeer(name: string, funcName: string, inData: string): Promise<CallResult> {
+    Logger.logEvent({ category: "peer", action: "call", target: name, details: { func: funcName } });
     const entry = this.peers.get(name);
-    if (!entry) return { ok: false, error: `no peer named "${name}"` };
-    if (!entry.connection) return { ok: false, error: `peer "${name}" is not connected` };
-    return entry.connection.sendRpc(funcName, inData);
+    let result: CallResult;
+    if (!entry) result = { ok: false, error: `no peer named "${name}"` };
+    else if (!entry.connection) result = { ok: false, error: `peer "${name}" is not connected` };
+    else result = await entry.connection.sendRpc(funcName, inData);
+    Logger.logEvent({ category: "peer", action: "response", target: name, details: { func: funcName, ok: result.ok } });
+    return result;
   }
 
   getPeer(name: string): PeerView | undefined {
@@ -194,6 +198,18 @@ export class PeerManager {
    * gate every incoming call passes through.
    */
   private async handleInbound(
+    name: string,
+    funcName: string,
+    inData: string,
+  ): Promise<CallResult> {
+    Logger.logEvent({ category: "peer", action: "request", target: name, details: { func: funcName } });
+    const result = await this.dispatchInbound(name, funcName, inData);
+    Logger.logEvent({ category: "peer", action: "served", target: name, details: { func: funcName, ok: result.ok } });
+    return result;
+  }
+
+  /** The access-gate + dispatch for an inbound call, wrapped by {@link handleInbound}. */
+  private async dispatchInbound(
     name: string,
     funcName: string,
     inData: string,

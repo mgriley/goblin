@@ -129,6 +129,8 @@ export const REGISTRY: Record<string, EventDef> = {
     db: withKey(s.db, e.target, e.details.value),
   })),
   "database/deleted": def("deleted", "db", (s, e) => ({ ...s, db: withoutKey(s.db, e.target) })),
+  // access (transient): reading a key doesn't change state, but highlights it.
+  "database/read": def("read", "db"),
 
   // notes
   "notes/set": def<{ content: string }>("set", "notes", (s, e) => ({
@@ -136,6 +138,8 @@ export const REGISTRY: Record<string, EventDef> = {
     notes: withKey(s.notes, e.target, e.details.content),
   })),
   "notes/deleted": def("deleted", "notes", (s, e) => ({ ...s, notes: withoutKey(s.notes, e.target) })),
+  // access (transient): reading a note doesn't change state, but highlights it.
+  "notes/read": def("read", "notes"),
 
   // functions (code + which libs they share)
   "func/created": def<{ code: string }>("created func", "funcs", (s, e) => ({
@@ -147,6 +151,8 @@ export const REGISTRY: Record<string, EventDef> = {
     funcs: withKey(s.funcs, e.target, { code: e.details.code, sharedLibs: s.funcs[e.target]?.sharedLibs ?? [] }),
   })),
   "func/removed": def("removed func", "funcs", (s, e) => ({ ...s, funcs: withoutKey(s.funcs, e.target) })),
+  // invocation (transient): running a func doesn't change state, but highlights it.
+  "func/called": def("called func", "funcs"),
 
   // shared libs
   "func/created lib": def<{ code: string }>("created lib", "libs", (s, e) => ({
@@ -194,6 +200,19 @@ export const REGISTRY: Record<string, EventDef> = {
     ...s,
     peers: withKey(s.peers, e.target, null),
   })),
+  // cross-goblin calls (all transient; target = the peer). Outbound: we call a
+  // peer (`call`) and its answer arrives (`response`). Inbound: a peer calls us
+  // (`request`) and we answer (`served`). `func`/`ok` ride in details.
+  "peer/call": def("called peer", "peers"),
+  "peer/response": def("peer responded", "peers"),
+  "peer/request": def("peer called us", "peers"),
+  "peer/served": def("responded to peer", "peers"),
+
+  // agent: a query to this goblin's AI brain (`query`) and the brain's final
+  // reply (`response`). No slice — goblin-level activity, not a subsystem entry;
+  // the query/response text rides in details.
+  "agent/query": def("query"),
+  "agent/response": def("response"),
 
   // spawning child goblins — topology, not a slice of this goblin's state.
   "spawn/spawned": def("spawned"),
@@ -215,6 +234,7 @@ export const CATEGORY_COLORS: Record<string, string> = {
   port: "#ce9178",
   peer: "#4fc1ff",
   spawn: "#b5cea8",
+  agent: "#e06c75",
 };
 
 // ---------------------------------------------------------------------------

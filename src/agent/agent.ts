@@ -1,4 +1,5 @@
 import { AsyncQueue } from "../utils/async-queue.js";
+import { Logger } from "../utils/logger.js";
 import type { GoblinConfig } from "../goblin.js";
 import type { LLM, Message, Tool, ToolCall } from "./llm.js";
 import { AnthropicLLM } from "./anthropic-llm.js";
@@ -64,8 +65,10 @@ export class Agent {
     while (true) {
       const item = await this.inbox.pop();
       try {
+        Logger.logEvent({ category: "agent", action: "query", details: { query: item.message } });
         this.history.push({ role: "user", content: item.message });
         const finalText = await this.runToolLoop();
+        Logger.logEvent({ category: "agent", action: "response", details: { response: finalText } });
         item.resolve(finalText);
       } catch (err) {
         item.reject(err as Error);

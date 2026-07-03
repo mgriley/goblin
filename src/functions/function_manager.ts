@@ -273,6 +273,7 @@ export class FunctionManager {
    * gracefully instead of hanging or blowing up the caller.
    */
   async executeFunc(name: string, inputData: string): Promise<ExecResult> {
+    Logger.logEvent({ category: "func", action: "called", target: name });
     const record = this.funcs.get(name);
     if (!record) return { ok: false, error: `no function named "${name}"` };
 

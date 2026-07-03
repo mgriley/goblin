@@ -62,6 +62,7 @@ export class NotesManager {
 
   /** The note's content, or undefined if there's no such note. */
   getNote(name: string): string | undefined {
+    Logger.logEvent({ category: "notes", action: "read", target: name });
     return this.notes.get(name);
   }
 

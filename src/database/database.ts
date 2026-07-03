@@ -89,6 +89,7 @@ export class Database {
    * error all come back as `{ ok: false, error }`.
    */
   async getValue(key: string): Promise<Result<string>> {
+    Logger.logEvent({ category: "database", action: "read", target: key });
     try {
       const value = await readFile(this.keyToPath(key), "utf8");
       return { ok: true, value };
