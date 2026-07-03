@@ -5,9 +5,10 @@
   "type": "module",
   "main": "dist/main.js",
   "scripts": {
-    "build": "tsc && cp src/functions/worker.mjs dist/functions/worker.mjs && cp src/functions/sys.mjs dist/functions/sys.mjs && cp -r src/inspector/site dist/inspector/site",
+    "build": "tsc && cp src/functions/worker.mjs dist/functions/worker.mjs && cp src/functions/sys.mjs dist/functions/sys.mjs && cp -r src/inspector/site dist/inspector/site && cp -r src/visualizer/site dist/visualizer/site",
     "start": "node dist/main.js",
     "dev": "tsx src/main.ts",
+    "visualizer": "tsx src/visualizer/main.ts",
     "typecheck": "tsc --noEmit",
     "test": "node --import tsx --test $(find src -name '*_test.ts')",
     "test:e2e": "node --import tsx tests/run.ts"

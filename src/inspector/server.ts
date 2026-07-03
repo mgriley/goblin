@@ -7,7 +7,7 @@ import { readAgentSocket } from "../socket_server.js";
 import { Recorder } from "./recorder.js";
 
 const PORT = 7777;
-const SKIP = new Set([".git", "node_modules", "recordings"]);
+const SKIP = new Set([".git", "node_modules"]);
 
 const STATIC_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), "site");
 

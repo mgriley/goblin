@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Goblin Visualizer</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #0d0d0d; color: #e0e0e0;
+      font-family: 'SF Mono', Monaco, Inconsolata, monospace;
+      font-size: 13px; height: 100vh; overflow: hidden;
+      display: flex; flex-direction: column; align-items: center;
+    }
+    #header, #body {
+      width: 100%; max-width: 1950px;
+      border-left: 1px solid #333; border-right: 1px solid #333;
+    }
+    #header {
+      display: flex; align-items: center; gap: 12px;
+      padding: 10px 16px; background: #111;
+      border-bottom: 1px solid #333; flex-shrink: 0;
+    }
+    .title { font-weight: bold; color: #fff; letter-spacing: .05em; }
+    #file { color: #90caf9; font-size: 12px; }
+    #status { font-size: 11px; margin-left: auto; }
+    #status.live { color: #4caf50; }
+    #status.error { color: #f44336; }
+    #nav { display: flex; gap: 4px; margin-left: 32px; }
+    .tab {
+      padding: 4px 12px; cursor: pointer; border-radius: 4px;
+      color: #888; font-size: 12px; user-select: none;
+    }
+    .tab:hover { background: #2a2a2a; color: #ccc; }
+    .tab.active { background: #1d3a5e; color: #fff; }
+    #body { display: flex; flex: 1; overflow: hidden; background: #1a1a1a; }
+
+    /* Events view */
+    #events-view { flex: 1; overflow-y: auto; }
+    .event {
+      display: grid;
+      grid-template-columns: 84px 68px 160px 130px 1fr;
+      gap: 12px; align-items: baseline;
+      padding: 6px 16px; border-bottom: 1px solid #202020;
+      white-space: nowrap;
+    }
+    .event:hover { background: #202020; }
+    .event .seq { color: #555; text-align: right; }
+    .event .ts { color: #777; }
+    .event .goblin { color: #90caf9; overflow: hidden; text-overflow: ellipsis; }
+    .event .cat {
+      color: #ce9178;
+    }
+    .event .cat .action { color: #dcdcaa; }
+    .event .rest { color: #bbb; white-space: pre-wrap; word-break: break-word; }
+    .event .rest .target { color: #4ec9b0; }
+    .event .rest .details { color: #888; }
+    .dim { padding: 24px; color: #555; }
+    .root-badge { color: #666; font-size: 11px; }
+  </style>
+</head>
+<body>
+  <div id="header">
+    <span class="title">Goblin Visualizer</span>
+    <span id="file"></span>
+    <span class="root-badge" id="meta"></span>
+    <div id="nav">
+      <span class="tab" data-view="events">Events</span>
+    </div>
+    <span id="status"></span>
+  </div>
+  <div id="body">
+    <div id="events-view"><div class="dim">Loading…</div></div>
+  </div>
+  <script src="app.js" type="module"></script>
+</body>
+</html>
