@@ -6,3 +6,7 @@ dist/
 config.json
 goblin-root
 debug.txt
+
+# Bundled frontend artifacts (esbuild output; source is app.ts)
+src/inspector/site/app.js
+src/visualizer/site/app.js

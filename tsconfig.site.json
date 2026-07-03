@@ -1,0 +1,17 @@
+{
+  // Type-checking config for the browser frontends (inspector + visualizer).
+  // esbuild does the bundling but not type-checking, so `tsc -p` this covers the
+  // site TypeScript with DOM libs (the node tsconfig excludes these dirs).
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": [],
+    "noEmit": true,
+    "declaration": false,
+    "sourceMap": false
+  },
+  "include": ["src/inspector/site/**/*.ts", "src/visualizer/site/**/*.ts"],
+  "exclude": ["node_modules", "dist"]
+}

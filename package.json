@@ -5,11 +5,15 @@
   "type": "module",
   "main": "dist/main.js",
   "scripts": {
-    "build": "tsc && cp src/functions/worker.mjs dist/functions/worker.mjs && cp src/functions/sys.mjs dist/functions/sys.mjs && cp -r src/inspector/site dist/inspector/site && cp -r src/visualizer/site dist/visualizer/site",
+    "build": "tsc && cp src/functions/worker.mjs dist/functions/worker.mjs && cp src/functions/sys.mjs dist/functions/sys.mjs && npm run build:sites",
+    "build:sites": "node src/inspector/build-site.mjs && node src/visualizer/build-site.mjs",
     "start": "node dist/main.js",
     "dev": "tsx src/main.ts",
-    "visualizer": "tsx src/visualizer/main.ts",
-    "typecheck": "tsc --noEmit",
+    "inspector": "node src/inspector/build-site.mjs --dev && tsx src/inspector/main.ts",
+    "visualizer": "node src/visualizer/build-site.mjs --dev && tsx src/visualizer/main.ts",
+    "typecheck": "npm run typecheck:node && npm run typecheck:site",
+    "typecheck:node": "tsc --noEmit",
+    "typecheck:site": "tsc -p tsconfig.site.json",
     "test": "node --import tsx --test $(find src -name '*_test.ts')",
     "test:e2e": "node --import tsx tests/run.ts"
   },
@@ -18,6 +22,7 @@
   "license": "MIT",
   "devDependencies": {
     "@types/node": "^25.9.1",
+    "esbuild": "^0.28.0",
     "tsx": "^4.22.3",
     "typescript": "^6.0.3"
   }

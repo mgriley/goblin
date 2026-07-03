@@ -1,31 +1,68 @@
-// Tiny signal/effect reactive core
-let _current = null
+// Module marker: keeps this file's top-level scope isolated (it's an ESM entry
+// bundled by esbuild), so declarations don't collide with DOM globals like `status`.
+export {}
 
-function signal(val) {
-  const subs = new Set()
+// Tiny signal/effect reactive core
+type Sub = () => void
+let _current: Sub | null = null
+
+interface Signal<T> {
+  get(): T
+  set(v: T): void
+}
+
+function signal<T>(val: T): Signal<T> {
+  const subs = new Set<Sub>()
   return {
     get() { if (_current) subs.add(_current); return val },
     set(v) { val = v; subs.forEach(fn => fn()) },
   }
 }
 
-function effect(fn) {
-  const run = () => { _current = run; try { fn() } finally { _current = null } }
+function effect(fn: () => void): void {
+  const run: Sub = () => { _current = run; try { fn() } finally { _current = null } }
   run()
 }
 
+// Domain types
+interface TreeNode {
+  name: string
+  path: string
+  type: 'dir' | 'file'
+  children?: TreeNode[]
+  content?: string
+}
+
+interface Msg {
+  role: 'user' | 'agent'
+  text: string
+  state?: 'pending' | 'error'
+}
+
+interface RecStatus {
+  recording: boolean
+  startedAt: string | null
+  events: number
+  file?: string | null
+}
+
+interface Status {
+  ok: boolean
+  text: string
+}
+
 // State
-const tree = signal(null)
-const selectedPath = signal(null)
-const expanded = signal(new Set([''])) // root open by default
-const status = signal(null)            // null | { ok: bool, text: string }
-const view = signal('files')           // 'files' | 'chat'
-const messages = signal([])            // [{ role: 'user'|'agent', text, state? }]
+const tree = signal<TreeNode | null>(null)
+const selectedPath = signal<string | null>(null)
+const expanded = signal(new Set<string>([''])) // root open by default
+const status = signal<Status | null>(null)
+const view = signal<'files' | 'chat'>('files')
+const messages = signal<Msg[]>([])
 const sending = signal(false)
-const rec = signal({ recording: false, startedAt: null, events: 0 })
+const rec = signal<RecStatus>({ recording: false, startedAt: null, events: 0 })
 
 // Find a node by path in the tree
-function findNode(node, target) {
+function findNode(node: TreeNode, target: string): TreeNode | null {
   if (node.path === target) return node
   for (const child of node.children ?? []) {
     const found = findNode(child, target)
@@ -34,11 +71,11 @@ function findNode(node, target) {
   return null
 }
 
-function esc(s) {
+function esc(s: unknown): string {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')
 }
 
-function formatContent(node) {
+function formatContent(node: TreeNode): string {
   if (!node.content) return '(empty)'
   if (node.name.endsWith('.json')) {
     try { return JSON.stringify(JSON.parse(node.content), null, 2) } catch {}
@@ -47,7 +84,7 @@ function formatContent(node) {
 }
 
 // Build HTML for one tree node (recursive)
-function renderNode(node, depth = 0) {
+function renderNode(node: TreeNode, depth = 0): string {
   const pad = `padding-left:${depth * 14 + 8}px`
 
   if (node.type === 'dir') {
@@ -66,15 +103,15 @@ function renderNode(node, depth = 0) {
 }
 
 // DOM refs
-const sidebar   = document.getElementById('sidebar')
-const filesView = document.getElementById('files-view')
-const chatView  = document.getElementById('chat-view')
-const statusEl  = document.getElementById('status')
-const messagesEl = document.getElementById('messages')
-const chatInput = document.getElementById('chat-input')
-const chatSend  = document.getElementById('chat-send')
-const tabs      = document.querySelectorAll('.tab')
-const recordBtn = document.getElementById('record')
+const sidebar    = document.getElementById('sidebar')!
+const filesView  = document.getElementById('files-view')!
+const chatView   = document.getElementById('chat-view')!
+const statusEl   = document.getElementById('status')!
+const messagesEl = document.getElementById('messages')!
+const chatInput  = document.getElementById('chat-input') as HTMLTextAreaElement
+const chatSend   = document.getElementById('chat-send') as HTMLButtonElement
+const tabs       = document.querySelectorAll<HTMLElement>('.tab')
+const recordBtn  = document.getElementById('record') as HTMLButtonElement
 
 // Re-render sidebar when tree, selection, or expanded state changes
 effect(() => {
@@ -121,8 +158,9 @@ effect(() => {
 })
 
 // Render the record button (label + elapsed + event count)
-function fmtElapsed(startedAt) {
-  const secs = Math.max(0, Math.floor((Date.now() - new Date(startedAt)) / 1000))
+function fmtElapsed(startedAt: string | null): string {
+  const start = startedAt ? new Date(startedAt).getTime() : Date.now()
+  const secs = Math.max(0, Math.floor((Date.now() - start) / 1000))
   const m = String(Math.floor(secs / 60)).padStart(2, '0')
   const s = String(secs % 60).padStart(2, '0')
   return `${m}:${s}`
@@ -144,9 +182,10 @@ effect(() => {
 
 // Sidebar click delegation: toggle dirs, select files
 sidebar.addEventListener('click', e => {
-  const row = e.target.closest('[data-action]')
+  const row = (e.target as HTMLElement).closest<HTMLElement>('[data-action]')
   if (!row) return
   const { action, path } = row.dataset
+  if (!path) return
   if (action === 'toggle') {
     const exp = expanded.get()
     exp.has(path) ? exp.delete(path) : exp.add(path)
@@ -157,7 +196,7 @@ sidebar.addEventListener('click', e => {
 })
 
 // Tab switching
-tabs.forEach(t => t.addEventListener('click', () => view.set(t.dataset.view)))
+tabs.forEach(t => t.addEventListener('click', () => view.set(t.dataset.view as 'files' | 'chat')))
 
 // Record / Stop toggle
 recordBtn.addEventListener('click', async () => {
@@ -167,14 +206,14 @@ recordBtn.addEventListener('click', async () => {
     const res = await fetch(action, { method: 'POST' })
     rec.set(await res.json())
   } catch (e) {
-    status.set({ ok: false, text: `⚠ ${e.message}` })
+    status.set({ ok: false, text: `⚠ ${(e as Error).message}` })
   } finally {
     recordBtn.disabled = false
   }
 })
 
 // Poll record status every 1s (keeps the live event count + elapsed fresh)
-async function fetchRecordStatus() {
+async function fetchRecordStatus(): Promise<void> {
   try {
     const res = await fetch('/record/status')
     if (res.ok) rec.set(await res.json())
@@ -184,7 +223,7 @@ fetchRecordStatus()
 setInterval(fetchRecordStatus, 1000)
 
 // Send a chat message to the agent (via the inspector's /ask proxy)
-async function sendMessage() {
+async function sendMessage(): Promise<void> {
   const text = chatInput.value.trim()
   if (!text || sending.get()) return
 
@@ -194,7 +233,7 @@ async function sendMessage() {
   sending.set(true)
 
   // Optimistic pending bubble; replaced when the reply (or error) arrives.
-  const pending = { role: 'agent', text: 'thinking…', state: 'pending' }
+  const pending: Msg = { role: 'agent', text: 'thinking…', state: 'pending' }
   messages.set([...messages.get(), pending])
 
   try {
@@ -203,12 +242,12 @@ async function sendMessage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ message: text }),
     })
-    const data = await res.json().catch(() => ({}))
+    const data = await res.json().catch(() => ({})) as { response?: string; error?: string }
     if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
     pending.text = data.response ?? '(no response)'
     pending.state = undefined
   } catch (e) {
-    pending.text = `⚠ ${e.message}`
+    pending.text = `⚠ ${(e as Error).message}`
     pending.state = 'error'
   } finally {
     messages.set([...messages.get()]) // re-render with the resolved bubble
@@ -224,20 +263,20 @@ chatInput.addEventListener('keydown', e => {
 chatInput.addEventListener('input', autoGrow)
 chatSend.addEventListener('click', sendMessage)
 
-function autoGrow() {
+function autoGrow(): void {
   chatInput.style.height = 'auto'
   chatInput.style.height = Math.min(chatInput.scrollHeight, 120) + 'px'
 }
 
 // Poll /tree every 3 s
-async function fetchTree() {
+async function fetchTree(): Promise<void> {
   try {
     const res = await fetch('/tree')
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
     tree.set(await res.json())
     status.set({ ok: true, text: '● Live' })
   } catch (e) {
-    status.set({ ok: false, text: `⚠ ${e.message}` })
+    status.set({ ok: false, text: `⚠ ${(e as Error).message}` })
   }
 }
 
