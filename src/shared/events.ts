@@ -251,6 +251,65 @@ export function replayTo(
 }
 
 // ---------------------------------------------------------------------------
+// Network topology (the graph): who exists, and their parent, at a point in time
+// ---------------------------------------------------------------------------
+
+/** A goblin node in the network graph at some point in the replay. */
+export interface GoblinNode {
+  /** Path-relative id: `""` = root, `children/foo`, `children/foo/children/bar`. */
+  id: string;
+  /** Display name — the last path segment, or "root". */
+  name: string;
+  /** Parent goblin's id, or null for the root. */
+  parentId: string | null;
+  /** `exited` once its process has exited (kept in the graph, dimmed). */
+  status: "alive" | "exited";
+}
+
+/** The id of a child spawned as `name` by the goblin `parentId`. */
+export function childId(parentId: string, name: string): string {
+  return parentId === "" ? `children/${name}` : `${parentId}/children/${name}`;
+}
+
+/** The parent id for a goblin id (`""`→null, `children/foo`→`""`). */
+export function parentOf(id: string): string | null {
+  if (id === "") return null;
+  const i = id.lastIndexOf("/children/");
+  return i === -1 ? "" : id.slice(0, i);
+}
+
+/**
+ * Reconstruct the set of live goblins at event `index` by folding spawn events
+ * over the baseline: `spawned` adds a child, `exited` dims it, `removed` drops it.
+ */
+export function topologyAt(
+  header: RecordingHeader | null,
+  events: RecordingEvent[],
+  index: number,
+): GoblinNode[] {
+  const nodes = new Map<string, GoblinNode>();
+  const add = (id: string): void => {
+    nodes.set(id, { id, name: id === "" ? "root" : id.split("/").pop()!, parentId: parentOf(id), status: "alive" });
+  };
+
+  for (const g of header?.goblins ?? []) add(g.id);
+
+  const end = Math.min(index, events.length - 1);
+  for (let i = 0; i <= end; i++) {
+    const e = events[i];
+    if (e.category !== "spawn" || !e.target) continue;
+    const id = childId(e.goblinId, e.target);
+    if (e.action === "spawned") add(id);
+    else if (e.action === "removed") nodes.delete(id);
+    else if (e.action === "exited") {
+      const n = nodes.get(id);
+      if (n) n.status = "exited";
+    }
+  }
+  return [...nodes.values()];
+}
+
+// ---------------------------------------------------------------------------
 // Slices + diffing (the "influence" of an event)
 // ---------------------------------------------------------------------------
 

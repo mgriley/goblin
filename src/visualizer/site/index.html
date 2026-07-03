@@ -5,73 +5,75 @@
   <title>Goblin Visualizer</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
+    :root { --line: #333; --panel: #111; --bg: #0d0d0d; }
     body {
-      background: #0d0d0d; color: #e0e0e0;
+      background: var(--bg); color: #e0e0e0;
       font-family: 'SF Mono', Monaco, Inconsolata, monospace;
       font-size: 13px; height: 100vh; overflow: hidden;
-      display: flex; flex-direction: column; align-items: center;
     }
-    #header, #body {
-      width: 100%; max-width: 1950px;
-      border-left: 1px solid #333; border-right: 1px solid #333;
-    }
-    #header {
+    #app { display: flex; flex-direction: column; height: 100vh; }
+
+    /* Top bar + transport */
+    #topbar {
       display: flex; align-items: center; gap: 12px;
-      padding: 10px 16px; background: #111;
-      border-bottom: 1px solid #333; flex-shrink: 0;
+      padding: 10px 16px; background: var(--panel);
+      border-bottom: 1px solid var(--line); flex-shrink: 0;
     }
     .title { font-weight: bold; color: #fff; letter-spacing: .05em; }
     #file { color: #90caf9; font-size: 12px; }
+    #meta { color: #666; font-size: 11px; }
+    #transport { display: flex; align-items: center; gap: 6px; margin-left: 24px; }
+    #transport button, #speed {
+      background: #1a1a1a; color: #ccc; border: 1px solid #444; border-radius: 4px;
+      font-family: inherit; font-size: 12px; padding: 3px 9px; cursor: pointer;
+    }
+    #transport button:hover, #speed:hover { background: #2a2a2a; }
+    #play { min-width: 34px; }
+    #position { color: #888; font-size: 11px; margin-left: 8px; white-space: nowrap; }
     #status { font-size: 11px; margin-left: auto; }
     #status.live { color: #4caf50; }
     #status.error { color: #f44336; }
-    #nav { display: flex; gap: 4px; margin-left: 32px; }
+
+    /* Main: graph + inspector */
+    #main { display: flex; flex: 1; overflow: hidden; }
+    #graph { flex: 1; overflow: hidden; position: relative; background: #141414; }
+    #graph svg { display: block; width: 100%; height: 100%; }
+    .edge { stroke: #3a3a3a; stroke-width: 1.5; }
+    .node circle { cursor: pointer; transition: opacity .15s; }
+    .node text { fill: #ccc; text-anchor: middle; font-size: 11px; pointer-events: none; }
+    .node.exited circle { opacity: .35; }
+    .node.exited text { fill: #777; }
+    .node.selected .body { stroke: #fff; stroke-width: 2.5; }
+    .node .ring { fill: none; opacity: 0; }
+    .node.affected .ring { opacity: 1; animation: pulse 1s ease-out infinite; }
+    @keyframes pulse { from { r: 16px; opacity: .9; } to { r: 30px; opacity: 0; } }
+
+    #inspector {
+      width: 380px; flex-shrink: 0; overflow-y: auto;
+      border-left: 1px solid var(--line); background: #1a1a1a;
+    }
+    #event-card { padding: 12px 16px; border-bottom: 1px solid var(--line); background: var(--panel); }
+    #event-card .ec-head { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; margin-bottom: 8px; }
+    #event-card .ec-cat { font-size: 11px; }
+    #event-card .ec-cat b { font-weight: normal; color: #dcdcaa; }
+    #event-card .ec-target { color: #4ec9b0; }
+    #event-card .ec-seq { color: #555; margin-left: auto; font-size: 11px; }
+
+    /* Goblin panel */
+    #goblin-panel .gp-head { padding: 10px 16px 8px; color: #90caf9; }
+    #tabs { display: flex; flex-wrap: wrap; gap: 4px; padding: 0 12px 8px; }
     .tab {
-      padding: 4px 12px; cursor: pointer; border-radius: 4px;
-      color: #888; font-size: 12px; user-select: none;
+      font-size: 11px; color: #888; padding: 2px 8px; border-radius: 3px; cursor: pointer; user-select: none;
     }
     .tab:hover { background: #2a2a2a; color: #ccc; }
     .tab.active { background: #1d3a5e; color: #fff; }
-    #body { display: flex; flex: 1; overflow: hidden; background: #1a1a1a; }
+    .tab .n { color: #555; margin-left: 3px; }
+    .tab.active .n { color: #9bd; }
 
-    /* Events view */
-    #events-view { flex: 1 1 58%; overflow-y: auto; border-right: 1px solid #333; }
-    .event.selected { background: #1d3a5e; }
-    .event {
-      display: grid;
-      grid-template-columns: 84px 68px 160px 130px 1fr;
-      gap: 12px; align-items: baseline;
-      padding: 6px 16px; border-bottom: 1px solid #202020;
-      white-space: nowrap;
-    }
-    .event:hover { background: #202020; }
-    .event .seq { color: #555; text-align: right; }
-    .event .ts { color: #777; }
-    .event .goblin { color: #90caf9; overflow: hidden; text-overflow: ellipsis; }
-    .event .cat {
-      color: #ce9178;
-    }
-    .event .cat .action { color: #dcdcaa; }
-    .event .rest { color: #bbb; white-space: pre-wrap; word-break: break-word; }
-    .event .rest .target { color: #4ec9b0; }
-    .event .rest .details { color: #888; }
-    .dim { padding: 24px; color: #555; }
-    .root-badge { color: #666; font-size: 11px; }
-
-    /* Detail pane — a selected event's influence on its subsystem */
-    #detail { flex: 1 1 42%; overflow-y: auto; }
-    .detail-head {
-      display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap;
-      padding: 12px 16px; border-bottom: 1px solid #333; background: #111;
-    }
-    .detail-head .d-goblin { color: #90caf9; }
-    .detail-head .d-sub { text-transform: uppercase; font-size: 11px; letter-spacing: .05em; }
-    .detail-head .d-label { color: #bbb; }
-    .detail-head .d-label b { color: #4ec9b0; font-weight: normal; }
-    .slice { padding: 6px 0; }
+    /* Slice entries (shared by event card + goblin panel) */
     .entry {
-      display: grid; grid-template-columns: 200px 1fr; gap: 12px;
-      padding: 5px 16px; border-bottom: 1px solid #1c1c1c; align-items: baseline;
+      display: grid; grid-template-columns: 150px 1fr; gap: 10px;
+      padding: 4px 16px; border-bottom: 1px solid #1c1c1c; align-items: baseline;
     }
     .entry .k { color: #4ec9b0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .entry .v { color: #bbb; white-space: pre-wrap; word-break: break-word; }
@@ -83,22 +85,51 @@
     .entry .now { color: #cdb87a; }
     .entry.changed .now, .entry.added .now { color: #b5cea8; }
     .entry .arrow { color: #666; margin: 0 4px; }
-    .d-json { padding: 12px 16px; color: #888; white-space: pre-wrap; word-break: break-word; line-height: 1.5; }
+    .dim { padding: 16px; color: #555; }
+
+    /* Bottom: swimlane timeline */
+    #timeline {
+      flex-shrink: 0; border-top: 1px solid var(--line); background: var(--panel);
+      max-height: 40vh; overflow-y: auto; user-select: none;
+    }
+    #timeline svg { display: block; width: 100%; }
+    #timeline .lane-bg:hover { fill: #181818; }
+    #timeline .lane-label { fill: #90caf9; font-size: 11px; }
+    #timeline .lane-sep { stroke: #202020; }
+    #timeline .tick { cursor: pointer; }
+    #timeline .tick:hover { stroke: #fff; stroke-width: 1; }
+    #timeline .playhead { stroke: #4ec9b0; stroke-width: 1.5; }
+    #timeline .playhead-grip { fill: #4ec9b0; }
   </style>
 </head>
 <body>
-  <div id="header">
-    <span class="title">Goblin Visualizer</span>
-    <span id="file"></span>
-    <span class="root-badge" id="meta"></span>
-    <div id="nav">
-      <span class="tab" data-view="events">Events</span>
+  <div id="app">
+    <div id="topbar">
+      <span class="title">Goblin Visualizer</span>
+      <span id="file"></span>
+      <span id="meta"></span>
+      <div id="transport">
+        <button id="step-back" title="Step back">◀</button>
+        <button id="play" title="Play/pause">▶</button>
+        <button id="step-fwd" title="Step forward">▶</button>
+        <select id="speed" title="Playback speed">
+          <option value="0.5">0.5×</option>
+          <option value="1" selected>1×</option>
+          <option value="2">2×</option>
+          <option value="4">4×</option>
+        </select>
+        <span id="position"></span>
+      </div>
+      <span id="status"></span>
     </div>
-    <span id="status"></span>
-  </div>
-  <div id="body">
-    <div id="events-view"><div class="dim">Loading…</div></div>
-    <div id="detail"><div class="dim">Select an event to see its effect</div></div>
+    <div id="main">
+      <div id="graph"><div class="dim">Loading…</div></div>
+      <div id="inspector">
+        <div id="event-card"></div>
+        <div id="goblin-panel"></div>
+      </div>
+    </div>
+    <div id="timeline"></div>
   </div>
   <script src="app.js" type="module"></script>
 </body>
